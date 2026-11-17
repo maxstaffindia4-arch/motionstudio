@@ -59,7 +59,12 @@ function ffprobeStreams(file: string): any[] {
 
 /** Extract one frame as raw RGBA (ffmpeg does decode+convert). Binary-safe. */
 function extractRgbaBuf(file: string, tSec: number): Buffer | null {
-  const res = spawnSync(FFMPEG, ['-y', '-ss', String(tSec), '-i', file, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'], {
+  const args = ['-y'];
+  // This ffmpeg build's native vp9 decoder drops the alpha side-channel;
+  // the libvpx-vp9 decoder preserves it (verified in the spike).
+  if (file.toLowerCase().endsWith('.webm')) args.push('-c:v', 'libvpx-vp9');
+  args.push('-ss', String(tSec), '-i', file, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-');
+  const res = spawnSync(FFMPEG, args, {
     encoding: 'buffer',
     maxBuffer: 256 * 1024 * 1024,
   });
@@ -168,37 +173,8 @@ function findBoxEdges(info: AlphaInfo): string[] {
   const findings: string[] = [];
   const MIN_RUN = 30;
 
-  const scan = (horizontal: boolean) => {
-    // For each line, walk it and record positions where a sharp low-alpha edge occurs.
-    const lines = horizontal ? h : w;
-    const len = horizontal ? w : h;
-    for (let l = 0; l < lines; l++) {
-      let runStart = -1;
-      let runVal = -1;
-      for (let i = 1; i < len; i++) {
-        const a0 = horizontal ? at(i - 1, l) : at(l, i - 1);
-        const a1 = horizontal ? at(i, l) : at(l, i);
-        const a2 = horizontal ? at(Math.min(i + 1, len - 1), l) : at(l, Math.min(i + 1, len - 1));
-        const inside = Math.max(a0, a1, a2);
-        const outside = Math.min(a0, a1, a2);
-        const step = Math.abs(a1 - a0) + Math.abs(a2 - a1);
-        const lowEdge = step >= EDGE_STEP && inside > ALPHA_ON && inside < LOW_ALPHA_MAX && outside <= ALPHA_ON;
-        const key = horizontal ? `y=${l}` : `x=${l}`;
-        const pos = i;
-        if (lowEdge) {
-          if (runStart === -1) { runStart = pos; runVal = inside; }
-        } else {
-          if (runStart !== -1 && pos - runStart >= MIN_RUN) {
-            // consecutive edge pixels on the SAME line = straight edge segment
-            findings.push(`${horizontal ? 'h' : 'v'}-edge ${key} pos~${runStart} len=${pos - runStart} insideA=${runVal}`);
-          }
-          runStart = -1;
-        }
-      }
-    }
-  };
-  // The run detection above is per-line; a true box edge repeats the same
-  // position across MANY lines. Count edge positions per coordinate instead.
+  // A true box edge repeats the same position across MANY lines: count edge
+  // positions per coordinate. `horizontal` scans rows (detects vertical edges).
   const edgeAt = (horizontal: boolean): Map<number, number> => {
     const m = new Map<number, number>();
     const lines = horizontal ? h : w;
@@ -227,6 +203,42 @@ function findBoxEdges(info: AlphaInfo): string[] {
   return findings;
 }
 
+interface Component {
+  minX: number; minY: number; maxX: number; maxY: number;
+  pixels: number[];
+}
+
+/** 4-connected components of the alpha>ALPHA_ON mask (BFS). */
+function componentsOf(info: AlphaInfo): Component[] {
+  const { w, h, alpha } = info;
+  const seen = new Uint8Array(w * h);
+  const out: Component[] = [];
+  const stack: number[] = [];
+  for (let s = 0; s < w * h; s++) {
+    if (seen[s] || alpha[s]! <= ALPHA_ON) continue;
+    const pixels: number[] = [];
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    stack.push(s);
+    seen[s] = 1;
+    while (stack.length > 0) {
+      const i = stack.pop()!;
+      pixels.push(i);
+      const x = i % w, y = (i / w) | 0;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      // 4-neighbours
+      if (x > 0 && !seen[i - 1] && alpha[i - 1]! > ALPHA_ON) { seen[i - 1] = 1; stack.push(i - 1); }
+      if (x < w - 1 && !seen[i + 1] && alpha[i + 1]! > ALPHA_ON) { seen[i + 1] = 1; stack.push(i + 1); }
+      if (y > 0 && !seen[i - w] && alpha[i - w]! > ALPHA_ON) { seen[i - w] = 1; stack.push(i - w); }
+      if (y < h - 1 && !seen[i + w] && alpha[i + w]! > ALPHA_ON) { seen[i + w] = 1; stack.push(i + w); }
+    }
+    out.push({ minX, minY, maxX, maxY, pixels });
+  }
+  return out;
+}
+
 function glowBoxCheck(file: string, w: number, h: number, times: number[]): { pass: boolean; detail: string } {
   const problems: string[] = [];
   for (const t of times) {
@@ -251,16 +263,31 @@ function glowBoxCheck(file: string, w: number, h: number, times: number[]): { pa
     const edges = findBoxEdges(info);
     if (edges.length > 0) problems.push(`t=${t}: ${edges.slice(0, 3).join('; ')}`);
 
-    // 3) falloff: along the horizontal centre line, after alpha drops below
-    //    ALPHA_ON it must not reappear (no detached halo/second box)
-    const cy = Math.floor((info.minY + info.maxY) / 2);
-    let seenOff = false, reappear = 0;
-    for (let x = info.minX; x <= info.maxX; x++) {
-      const a = info.alpha[cy * w + x]!;
-      if (a <= ALPHA_ON) seenOff = true;
-      else if (seenOff) reappear++;
+    // 3) Glow must extend BEYOND the solid content, per connected component:
+    //    bbox(alpha>16) vs bbox(alpha>200). If a glow were clipped at the
+    //    element/mask bounds the two boxes would coincide — the box artifact.
+    for (const comp of componentsOf(info)) {
+      let sMinX = w, sMinY = h, sMaxX = -1, sMaxY = -1, solid = 0;
+      for (const i of comp.pixels) {
+        if (info.alpha[i]! > 200) {
+          solid++;
+          const x = i % w, y = (i / w) | 0;
+          if (x < sMinX) sMinX = x;
+          if (x > sMaxX) sMaxX = x;
+          if (y < sMinY) sMinY = y;
+          if (y > sMaxY) sMaxY = y;
+        }
+      }
+      if (solid === 0) continue; // no solid core — can't assess glow skirt
+      // skirt = how far the solid core sits INSIDE the glow bbox (>=0).
+      const ext = Math.min(
+        sMinX - comp.minX, comp.maxX - sMaxX,
+        sMinY - comp.minY, comp.maxY - sMaxY
+      );
+      if (ext < 6) {
+        problems.push(`t=${t}: comp@(${comp.minX},${comp.minY}) glow does not extend past solid content (ext=${ext}px)`);
+      }
     }
-    if (reappear > w * 0.02) problems.push(`t=${t}: alpha reappears after falloff (${reappear}px)`);
   }
   return { pass: problems.length === 0, detail: problems.length ? problems.join(' | ') : 'clean' };
 }
