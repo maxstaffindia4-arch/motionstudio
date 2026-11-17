@@ -205,6 +205,11 @@ function declsFor(el: Element, ctx: RenderContext): string {
     }
     if (s.background !== undefined) d.push(`background:${sv(s.background)}`);
     if (s.borderRadius !== undefined) d.push(`border-radius:${num(s.borderRadius)}`);
+    if (s.glow) {
+      const blur = pxNum(ctx, s.glow.blur ?? (parseFloat(ctx.tokens.glow.blur) || 35));
+      const color = s.glow.color !== undefined ? sv(s.glow.color) : ctx.tokens.glow.color;
+      d.push(`box-shadow:0 0 ${round3(blur)}px ${color}`);
+    }
     const gp = s.overflow === 'hidden' ? descendantGlowRadius(el, ctx) : 0;
     if (s.padding !== undefined) {
       if (typeof s.padding === 'number') {
@@ -236,7 +241,13 @@ export function descendantGlowRadius(el: Element, ctx: RenderContext): number {
       const blur = e.style.glow.blur ?? (parseFloat(ctx.tokens.glow.blur) || 35);
       max = Math.max(max, pxNum(ctx, blur));
     }
-    if (e.type === 'stack') e.children.forEach(visit);
+    if (e.type === 'stack') {
+      if (e.style.glow) {
+        const blur = e.style.glow.blur ?? (parseFloat(ctx.tokens.glow.blur) || 35);
+        max = Math.max(max, pxNum(ctx, blur));
+      }
+      e.children.forEach(visit);
+    }
   };
   visit(el);
   return round3(max);

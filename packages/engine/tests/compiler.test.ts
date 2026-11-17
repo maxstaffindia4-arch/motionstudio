@@ -208,6 +208,26 @@ describe('compileScene', () => {
     expect(tl).not.toMatch(/width\s*:/);
   });
 
+  it('emits box-shadow for stack glow and pads overflow-hidden masks', () => {
+    const s = scene({
+      elements: [
+        {
+          type: 'stack', id: 'glowy', direction: 'column', gap: 24, start: 0, duration: 3,
+          placement: { anchor: 'center', offset: { x: 0, y: 0 } },
+          style: { overflow: 'hidden', glow: { color: '#FF0000', blur: 40 } },
+          animation: {},
+          children: [
+            { type: 'text', id: 'gt', content: 'Glow', start: 0, duration: 3, placement: { flow: true }, style: {}, animation: {} }
+          ]
+        }
+      ]
+    });
+    const { html } = compileScene(s);
+    expect(html).toContain('box-shadow:0 0 40px #FF0000');
+    expect(html).toContain('overflow:hidden');
+    expect(html).toContain('padding:40px');
+  });
+
   it('rejects invalid asset refs at schema level', () => {
     const s = scene({
       elements: [

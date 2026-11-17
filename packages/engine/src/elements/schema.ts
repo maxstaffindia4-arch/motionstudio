@@ -124,7 +124,14 @@ export const StackStyleSchema = z.object({
   /** 'hidden' enables overflow clipping — compiler adds glow padding (A7). */
   overflow: z.enum(['hidden', 'visible']).optional(),
   borderColor: StyleValueSchema.optional(),
-  borderWidth: z.number().min(0).optional()
+  borderWidth: z.number().min(0).optional(),
+  /** Box-shadow glow: emitted as `box-shadow: 0 0 <blur>px <color>` (no filters/blend modes). */
+  glow: z
+    .object({
+      color: StyleValueSchema.optional(),
+      blur: z.number().positive().optional()
+    })
+    .optional()
 });
 export type StackStyle = z.infer<typeof StackStyleSchema>;
 
