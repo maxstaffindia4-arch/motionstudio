@@ -11,7 +11,7 @@
     "test": "vitest run",
     "build:browser": "esbuild src/index.ts --bundle --platform=browser --format=esm --outfile=dist/engine.browser.js",
     "compile": "tsx scripts/compile.ts",
-    "lint:hf": "tsx scripts/lint-fixtures.ts"
+    "lint:hf": "tsx scripts/fixtures.ts"
   },
   "dependencies": {
     "zod": "^3.23.8"
@@ -19,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "esbuild": "^0.24.0",
+    "hyperframes": "^0.9.59",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
