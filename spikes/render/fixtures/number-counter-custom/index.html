@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+:root{--color-background:#0B0F19;--color-surface:#1E293B;--color-surfaceAlt:#0F172A;--color-text:#F8FAFC;--color-textMuted:#94A3B8;--color-primary:#3B82F6;--color-accent:#8B5CF6;--color-danger:#EF4444;--color-warning:#F97316;--color-success:#10B981;--color-gold:#F59E0B;--color-white:#FFFFFF;--color-black:#000000;--font-display:"Montserrat", "Inter", "Helvetica Neue", "Arial", sans-serif;--font-body:"Inter", "Helvetica Neue", "Arial", sans-serif;--font-mono:ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;--radius-sm:8px;--radius-md:16px;--radius-lg:28px;--radius-xl:36px;--radius-pill:9999px;--shadow-text:0 10px 30px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.6);--shadow-card:0 25px 60px rgba(0,0,0,0.7);--shadow-soft:0 4px 14px rgba(0,0,0,0.6);--glow-color:#8B5CF6;--glow-blur:35px;--ease-arrival:power4.out;--ease-exit:power3.in;--ease-pop:back.out(1.7);--motion:standard}
+html,body{margin:0;padding:0;width:1280px;height:720px;overflow:hidden;background:transparent}
+body{font-family:var(--font-body)}
+#root{position:relative;width:100%;height:100%}
+.anchor{position:absolute;display:flex}
+.clip{will-change:transform,opacity}
+.wipe-clip{overflow:hidden}
+.wipe-inner{will-change:transform}
+.strike-host{position:relative;display:inline-block}
+.strike-line{position:absolute;left:0;top:56%;width:100%;height:6.667px;background:var(--color-accent,#8B5CF6);border-radius:3.334px;transform:translateY(-50%) scaleX(0);transform-origin:0 50%;pointer-events:none}
+.bg{pointer-events:none}
+img{border:0}
+
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="5" data-width="1280" data-height="720">
+<div class="anchor" style="top:36px;left:64px;right:64px;bottom:36px;display:flex;justify-content:center;align-items:center;transform:translate(0px,0px)"><div id="card" class="clip" data-start="0" data-duration="5" style="display:flex;flex-direction:column;gap:16px;align-items:center;border:0.667px solid #FFFFFF;background:#1E293B;border-radius:21.333px;padding:40px 67px"><div id="num-row" class="clip" data-start="0" data-duration="5" style="display:flex;flex-direction:row;gap:16px;align-items:flex-end;justify-content:center"><div id="num-val" class="clip" data-start="0.3" data-duration="4.7" style="font-family:&quot;Montserrat&quot;, &quot;Inter&quot;, &quot;Helvetica Neue&quot;, &quot;Arial&quot;, sans-serif;font-size:80px;font-weight:900;color:#3B82F6;line-height:1;letter-spacing:-1.333px;text-shadow:0 10px 30px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.6)">70</div><div id="num-suf" class="clip" data-start="0.3" data-duration="4.7" style="font-family:&quot;Montserrat&quot;, &quot;Inter&quot;, &quot;Helvetica Neue&quot;, &quot;Arial&quot;, sans-serif;font-size:48px;font-weight:800;color:#3B82F6;text-shadow:0 10px 30px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.6)">%</div></div><div id="num-label" class="clip" data-start="0.5" data-duration="4.5" style="font-family:&quot;Montserrat&quot;, &quot;Inter&quot;, &quot;Helvetica Neue&quot;, &quot;Arial&quot;, sans-serif;font-size:21.333px;font-weight:600;color:#F8FAFC;text-align:center;text-shadow:0 10px 30px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.6)">Cost reduction vs local hiring</div></div></div></div>
+<script src="assets/gsap.min.js"></script>
+<script>
+window.__timelines = window.__timelines || {};
+window.__PARAMS = {"canvas":{"width":1280,"height":720,"fps":30,"durationSec":5,"output":"transparent","safeMargins":"action"}};
+const tl = gsap.timeline({ paused: true });
+    const __c0 = { v: 0 };
+    tl.fromTo('[id="card"]',{"opacity":0,"scale":0.5},{"opacity":1,"scale":1,"duration":0.5,"ease":"back.out(1.7)"},0.1);
+    tl.fromTo('[id="num-val"]',{"opacity":0,"scale":0.9},{"opacity":1,"scale":1,"duration":1.8,"ease":"power4.out"},0.3);
+    tl.fromTo('[id="num-label"]',{"opacity":0,"x":0,"y":16},{"opacity":1,"x":0,"y":0,"duration":0.45,"ease":"power4.out"},0.5);
+    tl.to(__c0,{v:70,duration:1.8,ease:"power2.out",onUpdate:function(){var e=document.getElementById("num-val");if(e)e.textContent=Math.round(this.v).toLocaleString();}},1.02);
+window.__timelines["main"] = tl;
+tl.seek(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+{
+  "fixtures": [
+    {
+      "name": "text-slam-landscape",
+      "component": "text-slam",
+      "dir": "fixtures/text-slam-landscape",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "text-slam-vertical",
+      "component": "text-slam",
+      "dir": "fixtures/text-slam-vertical",
+      "canvas": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "text-slam-square",
+      "component": "text-slam",
+      "dir": "fixtures/text-slam-square",
+      "canvas": {
+        "width": 1080,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "text-slam-custom",
+      "component": "text-slam",
+      "dir": "fixtures/text-slam-custom",
+      "canvas": {
+        "width": 1280,
+        "height": 720,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "number-counter-landscape",
+      "component": "number-counter",
+      "dir": "fixtures/number-counter-landscape",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "number-counter-vertical",
+      "component": "number-counter",
+      "dir": "fixtures/number-counter-vertical",
+      "canvas": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "number-counter-square",
+      "component": "number-counter",
+      "dir": "fixtures/number-counter-square",
+      "canvas": {
+        "width": 1080,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "number-counter-custom",
+      "component": "number-counter",
+      "dir": "fixtures/number-counter-custom",
+      "canvas": {
+        "width": 1280,
+        "height": 720,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-sweep-landscape",
+      "component": "glow-sweep",
+      "dir": "fixtures/glow-sweep-landscape",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-sweep-vertical",
+      "component": "glow-sweep",
+      "dir": "fixtures/glow-sweep-vertical",
+      "canvas": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-sweep-square",
+      "component": "glow-sweep",
+      "dir": "fixtures/glow-sweep-square",
+      "canvas": {
+        "width": 1080,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-sweep-custom",
+      "component": "glow-sweep",
+      "dir": "fixtures/glow-sweep-custom",
+      "canvas": {
+        "width": 1280,
+        "height": 720,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-torture-landscape",
+      "component": "glow-torture",
+      "dir": "fixtures/glow-torture-landscape",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-torture-vertical",
+      "component": "glow-torture",
+      "dir": "fixtures/glow-torture-vertical",
+      "canvas": {
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-torture-square",
+      "component": "glow-torture",
+      "dir": "fixtures/glow-torture-square",
+      "canvas": {
+        "width": 1080,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    },
+    {
+      "name": "glow-torture-custom",
+      "component": "glow-torture",
+      "dir": "fixtures/glow-torture-custom",
+      "canvas": {
+        "width": 1280,
+        "height": 720,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      }
+    }
+  ]
+}
