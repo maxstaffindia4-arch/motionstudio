@@ -1,0 +1,10 @@
+export * from './canvas/schema.js';
+export * from './canvas/geometry.js';
+export * from './scene/schema.js';
+export * from './scene/tokens.js';
+export * from './scene/validate.js';
+export * from './elements/schema.js';
+export * from './elements/style.js';
+export * from './elements/animation.js';
+export * from './compiler/types.js';
+export { compileScene } from './compile.js';

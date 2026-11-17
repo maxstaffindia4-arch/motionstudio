@@ -26,6 +26,8 @@ export const AnimationSpecSchema = z.object({
   duration: z.number().positive().optional(),
   /** Travel distance in px at unit=1 for slide/wipe/slam. */
   distance: z.number().positive().optional(),
+  /** Slide direction (slide preset; default 'up'). */
+  direction: z.enum(['up', 'down', 'left', 'right']).optional(),
   /** Seconds after element start before the entrance begins. */
   delay: z.number().min(0).optional()
 });

@@ -46,7 +46,7 @@ export const ANCHORS = [
 
 export type Anchor = (typeof ANCHORS)[number];
 
-export interface Offset {
+export interface PxOffset {
   x: number;
   y: number;
 }
@@ -60,7 +60,7 @@ export interface Offset {
 export function anchorPoint(
   canvas: CanvasSpec,
   anchor: Anchor,
-  offset: Offset = { x: 0, y: 0 }
+  offset: PxOffset = { x: 0, y: 0 }
 ): { x: number; y: number } {
   const a = safeArea(canvas);
   const col = anchor.endsWith('left') ? 0 : anchor.endsWith('right') ? 1 : 0.5;

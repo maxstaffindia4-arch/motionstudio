@@ -44,6 +44,7 @@ export const StyleTokensSchema = z.object({
 });
 
 export type StyleTokens = z.infer<typeof StyleTokensSchema>;
+export type MotionIntensity = StyleTokens['motion'];
 export type DeepPartialTokens = z.infer<ReturnType<typeof StyleTokensSchema.deepPartial>>;
 
 export const DEFAULT_TOKENS: StyleTokens = StyleTokensSchema.parse({
