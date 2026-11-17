@@ -1,0 +1,26 @@
+{
+  "name": "@motion-studio/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build:browser": "esbuild src/index.ts --bundle --platform=browser --format=esm --outfile=dist/engine.browser.js",
+    "compile": "tsx scripts/compile.ts",
+    "lint:hf": "tsx scripts/lint-fixtures.ts"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
