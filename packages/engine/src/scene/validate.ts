@@ -86,7 +86,7 @@ export function validateScene(scene: SceneSpec): ValidationResult {
       // gap is unit-relative: minimum 24 * unit(canvas) px = 24 in spec units.
       const minGapSpec = MIN_GAP_UNIT;
       const minGapPx = round2(MIN_GAP_UNIT * unit(canvas));
-      if (el.gap < minGapSpec - 1e-6) {
+      if (el.children.length > 1 && el.gap < minGapSpec - 1e-6) {
         warnings.push({
           code: 'gap-below-min',
           severity: 'warning',

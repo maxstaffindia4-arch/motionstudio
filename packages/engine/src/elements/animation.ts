@@ -43,6 +43,8 @@ export interface ExitPlan {
 export interface MotionContext {
   easings: Easings;
   motion: MotionIntensity;
+  /** min(width,height)/1080 — distances are spec'd at unit=1 and scaled by this. */
+  unit: number;
 }
 
 const INTENSITY_FACTOR: Record<MotionIntensity, number> = {
@@ -62,7 +64,7 @@ export function entrancePlan(spec: AnimationSpec | undefined, ctx: MotionContext
   }
   const role = spec.role ?? 'arrival';
   const ease = spec.easing ?? (role === 'exit' ? ctx.easings.exit : spec.preset === 'pop' ? ctx.easings.pop : ctx.easings.arrival);
-  const dist = (spec.distance ?? 60) ;
+  const dist = (spec.distance ?? 60) * ctx.unit;
 
   switch (spec.preset) {
     case 'slam':
@@ -84,7 +86,7 @@ export function entrancePlan(spec: AnimationSpec | undefined, ctx: MotionContext
         at
       };
     case 'slide': {
-      const dir = slideVector(spec);
+      const dir = slideVector(spec, ctx.unit);
       return {
         kind: 'tween',
         from: { opacity: 0, x: dir.x, y: dir.y },
@@ -121,6 +123,21 @@ export function entrancePlan(spec: AnimationSpec | undefined, ctx: MotionContext
         ease,
         at
       };
+    case 'whip': {
+      // Pass-through sweep: travels the full distance so the element exits
+      // frame (whip-transition bars, glow streaks). direction 'left' mirrors.
+      const mirrored = spec.direction === 'left';
+      const from = mirrored ? dist : -dist;
+      const to = mirrored ? -dist : dist;
+      return {
+        kind: 'tween',
+        from: { x: from },
+        to: { x: to },
+        duration: d(0.9, ctx, spec.duration),
+        ease: spec.easing ?? 'expo.inOut',
+        at
+      };
+    }
     case 'strike':
       return {
         kind: 'strike',
@@ -131,13 +148,13 @@ export function entrancePlan(spec: AnimationSpec | undefined, ctx: MotionContext
         at,
         strikeAt: at + (spec.duration ?? 0.6),
         strikeDuration: d(0.35, ctx),
-        dimAfter: true
+        dimAfter: spec.dimAfter ?? true
       };
   }
 }
 
-function slideVector(spec: AnimationSpec): { x: number; y: number } {
-  const dist = spec.distance ?? 60;
+function slideVector(spec: AnimationSpec, unit: number): { x: number; y: number } {
+  const dist = (spec.distance ?? 60) * unit;
   switch (spec.direction) {
     case 'down':
       return { x: 0, y: -dist };
@@ -162,8 +179,8 @@ export function exitPlan(
   const base = spec.duration ?? (entranceDuration > 0 ? entranceDuration * 0.45 : 0.3);
   const cap = entranceDuration > 0 ? entranceDuration * 0.5 : 0.3;
   const duration = d(Math.min(base, cap), ctx);
-  const dist = spec.distance ?? 40;
-  const dir = spec.preset === 'slide' ? slideVector(spec) : { x: 0, y: -dist * 0.4 };
+  const dist = (spec.distance ?? 40) * ctx.unit;
+  const dir = spec.preset === 'slide' ? slideVector(spec, ctx.unit) : { x: 0, y: -dist * 0.4 };
   return {
     from: { opacity: 1, x: 0, y: 0, scale: 1 },
     to: { opacity: 0, x: dir.x * 0.4, y: dir.y * 0.4, scale: 0.96 },

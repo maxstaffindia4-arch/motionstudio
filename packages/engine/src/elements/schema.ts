@@ -14,7 +14,9 @@ export const ANIMATION_PRESETS = [
   'fade-scale',
   'wipe',
   'counter',
-  'strike'
+  'strike',
+  /** Pass-through sweep: from -distance to +distance (whip transitions, streaks). */
+  'whip'
 ] as const;
 
 export const AnimationSpecSchema = z.object({
@@ -29,7 +31,9 @@ export const AnimationSpecSchema = z.object({
   /** Slide direction (slide preset; default 'up'). */
   direction: z.enum(['up', 'down', 'left', 'right']).optional(),
   /** Seconds after element start before the entrance begins. */
-  delay: z.number().min(0).optional()
+  delay: z.number().min(0).optional(),
+  /** strike preset: dim the element to 60% after the line lands (default true). */
+  dimAfter: z.boolean().optional()
 });
 export type AnimationSpec = z.infer<typeof AnimationSpecSchema>;
 
@@ -118,7 +122,9 @@ export const StackStyleSchema = z.object({
   padding: z.union([z.number(), z.string()]).optional(),
   opacity: z.number().min(0).max(1).optional(),
   /** 'hidden' enables overflow clipping — compiler adds glow padding (A7). */
-  overflow: z.enum(['hidden', 'visible']).optional()
+  overflow: z.enum(['hidden', 'visible']).optional(),
+  borderColor: StyleValueSchema.optional(),
+  borderWidth: z.number().min(0).optional()
 });
 export type StackStyle = z.infer<typeof StackStyleSchema>;
 
@@ -152,6 +158,7 @@ export interface StackElement extends ElementTiming {
   gap: number;
   align?: 'start' | 'center' | 'end' | 'stretch' | undefined;
   justify?: 'start' | 'center' | 'end' | 'between' | 'around' | undefined;
+  wrap?: boolean | undefined;
   style: StackStyle;
   children: Element[];
 }
@@ -183,6 +190,8 @@ export const ElementSchema: z.ZodType<Element, z.ZodTypeDef, unknown> = z.discri
     gap: z.number().min(0).default(0),
     align: z.enum(['start', 'center', 'end', 'stretch']).optional(),
     justify: z.enum(['start', 'center', 'end', 'between', 'around']).optional(),
+    /** flex-wrap for row stacks (ignored by grid). */
+    wrap: z.boolean().optional(),
     style: StackStyleSchema.default({}),
     children: z.array(z.lazy(() => ElementSchema)).min(1),
     ...TimingSchema

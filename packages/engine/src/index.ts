@@ -8,3 +8,4 @@ export * from './elements/style.js';
 export * from './elements/animation.js';
 export * from './compiler/types.js';
 export { compileScene } from './compile.js';
+export * from './components/registry.js';

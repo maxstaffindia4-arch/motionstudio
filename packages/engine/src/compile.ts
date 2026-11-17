@@ -50,7 +50,7 @@ export function compileScene(input: unknown, opts: CompileOptions = {}): Compile
     inset: safeInset(canvas),
     target,
     warnings,
-    motion: { easings: tokens.easings, motion: tokens.motion },
+    motion: { easings: tokens.easings, motion: tokens.motion, unit: u },
   };
 
   const bg = renderBackground(scene.background, ctx);

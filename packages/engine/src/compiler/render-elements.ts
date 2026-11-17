@@ -191,12 +191,18 @@ function declsFor(el: Element, ctx: RenderContext): string {
     } else {
       d.push('display:flex');
       d.push(`flex-direction:${el.direction}`);
+      if (el.wrap) d.push('flex-wrap:wrap');
     }
     d.push(`gap:${round3(Math.max(el.gap, MIN_GAP) * ctx.unit)}px`);
     const alignMap = { start: 'flex-start', center: 'center', end: 'flex-end', stretch: 'stretch' } as const;
     const justifyMap = { start: 'flex-start', center: 'center', end: 'flex-end', between: 'space-between', around: 'space-around' } as const;
     if (el.align) d.push(`align-items:${alignMap[el.align]}`);
     if (el.justify) d.push(`justify-content:${justifyMap[el.justify]}`);
+    if (s.borderColor !== undefined && s.borderWidth !== undefined && s.borderWidth > 0) {
+      const bcMissing = (path: string) =>
+        ctx.warnings.push({ code: 'token-unresolved', severity: 'warning', message: `unresolved token '${path}'`, elementId: el.id });
+      d.push(`border:${round3(s.borderWidth * ctx.unit)}px solid ${resolveStyleValue(s.borderColor, { tokens: ctx.tokens, onMissing: bcMissing })}`);
+    }
     if (s.background !== undefined) d.push(`background:${sv(s.background)}`);
     if (s.borderRadius !== undefined) d.push(`border-radius:${num(s.borderRadius)}`);
     const gp = s.overflow === 'hidden' ? descendantGlowRadius(el, ctx) : 0;
