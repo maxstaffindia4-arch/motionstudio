@@ -55,7 +55,10 @@ function build(params: Params, ctx: ComponentContext): Element[] {
           lineHeight: 1,
           letterSpacing: -2,
         },
-        // A10: proxy onUpdate counter — pending real-render verification.
+        // A10 verified: hyperframes snapshot at 0.8/1.2/1.6/2.0s produced
+        // distinct frames — the proxy onUpdate counter renders changing
+        // numbers in a real HyperFrames capture. Rolling-digit fallback
+        // not needed.
         animation: { in: { preset: 'counter', duration: 1.8 } },
       }),
       ...(params.suffix

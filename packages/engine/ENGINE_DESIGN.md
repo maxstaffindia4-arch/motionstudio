@@ -273,15 +273,14 @@ Elements are emitted into the DOM **in scene array order** (stack children in th
 declared order). Only the *timeline calls* are sorted by `(start, id)` for stable output.
 Background layer is always first inside `#root`.
 
-### Counter verification (A10)
+### Counter verification (A10) — VERIFIED
 
 `counter` uses `tl.to(proxy, { v: target, onUpdate: () => el.textContent = ... })`.
-GSAP fires `onUpdate` on `seek()`, so it *should* be deterministic — but this must be
-verified against a real `hyperframes render`: seek to 1s, 2s, 3s and confirm different
-numbers. **Verification step** (Phase 5 tooling): render `tests/fixtures/counter.html`
-at those times and diff `textContent`. If it fails, fallback = rolling-digit columns
-(`translateY` per digit, transform-only). Until verified, `counter` is marked
-experimental in component docs.
+Verified 2026-… via `hyperframes snapshot` (headless Chrome) on the
+`number-counter-custom` fixture at 0.8s/1.2s/1.6s/2.0s/3s: every frame during the
+count window was pixel-distinct and settled at the target — `onUpdate` fires
+correctly under HyperFrames' seek-based rendering. Rolling-digit fallback not
+needed; `counter` is a supported preset.
 
 ### Compiler output
 
