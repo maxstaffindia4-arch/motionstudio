@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 10001 -s /bin/bash app
 ENV HOME=/home/app
 
-# --- hyperframes CLI (pinned to the version verified in Phase 1) ---
+# --- hyperframes CLI (pinned — keep in sync with packages/engine/package.json) ---
 RUN npm install -g hyperframes@0.9.59
 
 WORKDIR /work

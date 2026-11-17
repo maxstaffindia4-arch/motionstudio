@@ -1,5 +1,11 @@
 {
   "name": "motion-studio-render-spike",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "gen": "tsx scripts/gen-fixtures.ts",
+    "render": "tsx scripts/render-all.ts",
+    "verify": "tsx scripts/verify.ts",
+    "smoke:docker": "node scripts/smoke-docker.mjs"
+  }
 }

@@ -192,5 +192,38 @@
         "output": "transparent"
       }
     }
+  ],
+  "negatives": [
+    {
+      "name": "negative-glow-box",
+      "mode": "full",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      },
+      "expectFail": [
+        "mov.glow-box",
+        "webm.glow-box"
+      ]
+    },
+    {
+      "name": "negative-native-mp4",
+      "dir": "fixtures/glow-sweep-landscape",
+      "mode": "mp4-native",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      },
+      "expectFail": [
+        "mp4.glow-box",
+        "mp4.transparent-pixels"
+      ]
+    }
   ]
 }

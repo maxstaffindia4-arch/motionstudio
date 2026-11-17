@@ -43,6 +43,16 @@ interface RenderResult {
   chroma?: { file: string; bytes: number; ms: number; ok: boolean };
   full?: { file: string; bytes: number; ms: number; ok: boolean };
 }
+interface NegativeEntry {
+  name: string;
+  mode: 'full' | 'mp4-native';
+  canvas: ManifestEntry['canvas'];
+  expectFail: string[];
+}
+interface Manifest {
+  fixtures: ManifestEntry[];
+  negatives?: NegativeEntry[];
+}
 
 // ---------- helpers ----------
 
@@ -239,8 +249,20 @@ function componentsOf(info: AlphaInfo): Component[] {
   return out;
 }
 
-function glowBoxCheck(file: string, w: number, h: number, times: number[]): { pass: boolean; detail: string } {
+interface GlowMetrics {
+  /** Smallest glow-skirt extension (px) across all components/times. */
+  minExt: number | null;
+  /** Largest alpha found in the ring outside the content bbox. */
+  maxRing: number;
+  /** Total straight-edge hits across all times. */
+  edgeHits: number;
+}
+
+function glowBoxCheck(
+  file: string, w: number, h: number, times: number[]
+): { pass: boolean; detail: string; metrics: GlowMetrics } {
   const problems: string[] = [];
+  const metrics: GlowMetrics = { minExt: null, maxRing: 0, edgeHits: 0 };
   for (const t of times) {
     const rgba = extractRgbaBuf(file, t);
     if (!rgba) { problems.push(`t=${t}: extraction failed`); continue; }
@@ -257,10 +279,12 @@ function glowBoxCheck(file: string, w: number, h: number, times: number[]): { pa
         ringMax = Math.max(ringMax, info.alpha[y * w + x]!);
       }
     }
+    metrics.maxRing = Math.max(metrics.maxRing, ringMax);
     if (ringMax > ALPHA_ON) problems.push(`t=${t}: alpha ${ringMax} in ${R}px ring outside bbox`);
 
     // 2) no rectangular low-alpha edge (box artifact)
     const edges = findBoxEdges(info);
+    metrics.edgeHits += edges.length;
     if (edges.length > 0) problems.push(`t=${t}: ${edges.slice(0, 3).join('; ')}`);
 
     // 3) Glow must extend BEYOND the solid content, per connected component:
@@ -284,12 +308,19 @@ function glowBoxCheck(file: string, w: number, h: number, times: number[]): { pa
         sMinX - comp.minX, comp.maxX - sMaxX,
         sMinY - comp.minY, comp.maxY - sMaxY
       );
+      metrics.minExt = metrics.minExt === null ? ext : Math.min(metrics.minExt, ext);
       if (ext < 6) {
         problems.push(`t=${t}: comp@(${comp.minX},${comp.minY}) glow does not extend past solid content (ext=${ext}px)`);
       }
     }
   }
-  return { pass: problems.length === 0, detail: problems.length ? problems.join(' | ') : 'clean' };
+  const m =
+    `minExt=${metrics.minExt ?? 'n/a'}px ringMax=${metrics.maxRing} edgeHits=${metrics.edgeHits}`;
+  return {
+    pass: problems.length === 0,
+    detail: problems.length ? `${problems.join(' | ')} [${m}]` : `clean (${m})`,
+    metrics,
+  };
 }
 
 // ---------- main ----------
@@ -307,7 +338,7 @@ const row = (fixture: string, check: string, pass: boolean, detail: string) =>
 
 function main(): void {
   mkdirSync(TMP, { recursive: true });
-  const manifest = JSON.parse(readFileSync(join(FIXTURES, 'manifest.json'), 'utf8')) as { fixtures: ManifestEntry[] };
+  const manifest = JSON.parse(readFileSync(join(FIXTURES, 'manifest.json'), 'utf8')) as Manifest;
   const renderReport = existsSync(join(OUT, 'render-report.json'))
     ? (JSON.parse(readFileSync(join(OUT, 'render-report.json'), 'utf8')) as { results: RenderResult[] })
     : { results: [] as RenderResult[] };
@@ -377,6 +408,30 @@ function main(): void {
     }
   }
 
+  // --- negative controls: detector MUST fail on deliberately broken output ---
+  const controls: Array<{ name: string; check: string; expected: string; actualPass: boolean | null; ok: boolean; detail: string }> = [];
+  for (const neg of manifest.negatives ?? []) {
+    const { width: w, height: h } = neg.canvas;
+    const times = [0.6, 1.4, 2.2, 3.0, 3.8].filter((t) => t < neg.canvas.durationSec - 0.3);
+    for (const expect of neg.expectFail) {
+      const dot = expect.indexOf('.');
+      const stage = expect.slice(0, dot);
+      const check = expect.slice(dot + 1);
+      const file = join(OUT, `${neg.name}.${stage}`);
+      let res: { pass: boolean; detail: string } | null = null;
+      if (existsSync(file)) {
+        if (check === 'glow-box') res = glowBoxCheck(file, w, h, times);
+        else if (check === 'transparent-pixels') res = transparencyCheck(file, w, h, Math.min(2, neg.canvas.durationSec / 2));
+      }
+      const actualPass = res?.pass ?? null;
+      // Control is valid only if the check FAILS (or output is missing).
+      const ok = actualPass === false || res === null;
+      const detail = res?.detail ?? 'output missing';
+      controls.push({ name: neg.name, check: expect, expected: 'fail', actualPass, ok, detail });
+      row(`neg:${neg.name}`, `${check} (expect-fail)`, ok, detail);
+    }
+  }
+
   // --- summary ---
   const fails = rows.filter((r) => !r.pass);
   const out = {
@@ -385,6 +440,7 @@ function main(): void {
     passed: rows.length - fails.length,
     failed: fails.length,
     rows,
+    negativeControls: controls,
     timings: renderReport.results.map((r) => ({
       name: r.name,
       movMs: r.mov?.ms, webmMs: r.webm?.ms, chromaMs: r.chroma?.ms, fullMs: r.full?.ms,

@@ -65,6 +65,25 @@ frames at 1 s/2 s/3 s.
 **No stage introduced a glow box.** The derived WebM's alpha matches the
 MOV master's behaviour on every glow fixture.
 
+Measured detector values (good fixtures): `minExt=7–15px` glow skirt,
+`ringMax=16` (== ALPHA_ON threshold, i.e. no alpha outside content),
+`edgeHits=0` straight-edge detections — identical on MOV and WebM.
+
+### Negative controls (detector must FAIL — 4/4 expected-fail rows PASS)
+
+| Control | What it is | Result |
+|---|---|---|
+| `negative-glow-box` (MOV + derived WebM) | Hand-authored comp reproducing the Motion Lab box artifact: opaque plate inside `overflow:hidden` clip that cuts the glow at a straight edge | glow-box check **FAILS as required**: `minExt=0px` (glow bbox == solid bbox, skirt clipped) at all 5 sample times, both stages |
+| `negative-native-mp4` | `hyperframes render --format mp4` of glow-sweep-landscape (opaque h264, no alpha) | glow-box and transparent-pixels **FAIL as required** (alpha=255 everywhere → `ext=0`, no transparent pixels) |
+
+**Finding — native WebM alpha works in hyperframes 0.9.59.** A native
+`--format webm` render of glow-sweep-landscape probes as
+`vp9/yuv420p` with `ALPHA_MODE=1` and passes every check. Motion Lab's
+"native WebM has no alpha" applied to an older version. The MOV-master →
+ffmpeg-derive pipeline is still the specified method (and remains the
+safer cross-version path), but the derived-WebM step is no longer
+strictly necessary on 0.9.59 — flagged for Phase 5 to re-evaluate.
+
 ## Timing & size (Windows host, hyperframes 0.9.59, ffmpeg Lavc60)
 
 Per fixture ≈ **35–115 s MOV render** + **10–95 s WebM encode** +
@@ -94,6 +113,23 @@ because scenes are mostly transparent; MP4s 0.05–0.2 MB.
    Inter/Montserrat from Google Fonts at render time and cached them under
    `$HOME/.cache/hyperframes/fonts`. The Dockerfile warms this cache at
    **build** time so renders need no network.
+5. **Disk preflight + per-job temp dirs** added to `render-all.ts`: MOV
+   size is estimated at 0.75 B/pixel-frame (+5% derives) and the run
+   aborts early if the estimate exceeds 90% of free space; each fixture
+   renders with `TMPDIR` pointed at `out/_tmp/<name>` which is deleted
+   after the job.
+6. **Negative controls** live in `manifest.json → negatives[]`;
+   `verify.ts` asserts each expected-fail check actually fails and
+   includes the detector's measured values (`minExt`, `ringMax`,
+   `edgeHits`) in `verify-report.json → negativeControls`.
+
+## Docker smoke run
+
+`pnpm smoke:docker` (spike package) builds the image and runs
+render-all + verify inside the container, then prints the verify summary.
+**Status: NOT YET RUN — no Docker daemon on the spike host.** The script
+exits 2 with a clear message when docker is unavailable. Verdict remains
+CONDITIONAL GO until this passes.
 
 ## Dockerfile
 
