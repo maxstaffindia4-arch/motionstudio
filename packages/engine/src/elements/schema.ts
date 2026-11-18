@@ -65,6 +65,12 @@ const TimingSchema = {
   start: z.number().min(0),
   duration: z.number().positive(),
   placement: PlacementSchema,
+  /**
+   * Manual-lock flag (Phase 2 AI): elements marked manual are protected by
+   * the ai package's post-generation guard — edits may not change them
+   * unless the user's instruction references them.
+   */
+  manual: z.boolean().optional(),
   animation: z
     .object({
       in: AnimationSpecSchema.optional(),
@@ -140,6 +146,7 @@ interface ElementTiming {
   start: number;
   duration: number;
   placement: Placement;
+  manual?: boolean | undefined;
   animation: { in?: AnimationSpec | undefined; out?: AnimationSpec | undefined };
 }
 
