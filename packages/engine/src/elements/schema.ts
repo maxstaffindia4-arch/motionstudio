@@ -123,6 +123,9 @@ export const ImageStyleSchema = z.object({
 export type ImageStyle = z.infer<typeof ImageStyleSchema>;
 
 export const StackStyleSchema = z.object({
+  /** Fixed box size (px at unit=1 or CSS length) — enables real clipping with overflow:'hidden'. */
+  width: z.union([z.number(), z.string()]).optional(),
+  height: z.union([z.number(), z.string()]).optional(),
   background: StyleValueSchema.optional(),
   borderRadius: z.union([z.number(), z.string()]).optional(),
   padding: z.union([z.number(), z.string()]).optional(),

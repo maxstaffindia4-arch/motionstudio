@@ -227,7 +227,7 @@ describe('prompt builder', () => {
     expect(memoryTokens).toBe(0);
     // Snapshot: hash the system prompt — bump PROMPT_VERSION when it changes.
     const hash = createHash('sha256').update(system).digest('hex').slice(0, 16);
-    expect(hash).toBe('b336f70f28b622a5');
+    expect(hash).toBe('2bf0a7a3bc3ff55d');
   });
 
   it('sceneSpecDoc generates from live schemas', () => {

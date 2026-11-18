@@ -184,6 +184,8 @@ function declsFor(el: Element, ctx: RenderContext): string {
 
   if (el.type === 'stack') {
     const s = el.style;
+    if (s.width !== undefined) d.push(`width:${num(s.width)}`);
+    if (s.height !== undefined) d.push(`height:${num(s.height)}`);
     if (el.direction === 'grid') {
       const cols = el.columns ?? Math.min(el.children.length, 4);
       d.push('display:grid');

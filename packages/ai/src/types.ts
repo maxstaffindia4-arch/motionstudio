@@ -84,6 +84,7 @@ export interface GenerationIssue {
 export interface StageMetrics {
   stage: StageName;
   latencyMs: number;
+  attempt?: number;
   inputTokens?: number;
   outputTokens?: number;
   detail?: string;

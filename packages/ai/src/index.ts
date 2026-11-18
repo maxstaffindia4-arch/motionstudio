@@ -13,3 +13,4 @@ export { layoutQA, closeLayoutBrowser } from './layout-qa.js';
 export type { LayoutIssue, LayoutQaResult, LayoutQaOptions, LayoutSeverity } from './layout-qa.js';
 export { stageScene, engineAssetsDir, hyperframesBin } from './stage.js';
 export type { StagedComposition } from './stage.js';
+export { generateAnimation } from './loop.js';

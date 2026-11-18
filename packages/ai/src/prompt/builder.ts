@@ -5,7 +5,7 @@ import { sceneSpecDoc } from './spec-docs.js';
 import { catalogText } from './catalog.js';
 import { presetCanvas, unit, safeArea, CanvasSpecSchema } from '@motion-studio/engine';
 
-export const PROMPT_VERSION = 'p2-2026-11-18';
+export const PROMPT_VERSION = 'p2-2026-11-18b';
 
 const HF_RULES_ESSENTIALS = `## HYPERFRAMES RULES (what the compiler emits — respect them in custom scenes)
 - Deterministic, seekable GSAP timeline paused and registered on window.__timelines["main"].
