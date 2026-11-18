@@ -184,6 +184,53 @@ tl.seek(0);
 `;
 }
 
+/*
+ * NEGATIVE CONTROL — "faint box": same glow scene as negative-glow-box but
+ * the plate is a low-alpha (7%) rectangle BEHIND the glow instead of an
+ * opaque clipping plate. Its alpha (~18) sits right at the ALPHA_ON
+ * boundary, so the plate merges into the content mask and minExt looks
+ * clean — the detector must catch it via the faint-edge scan instead.
+ */
+function negativeFaintBoxHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+html,body{margin:0;padding:0;width:1920px;height:1080px;overflow:hidden;background:transparent}
+#root{position:relative;width:100%;height:100%}
+.anchor{position:absolute;inset:0;display:flex;justify-content:center;align-items:center}
+#neg-plate{position:absolute;width:1200px;height:500px;background:rgba(255,45,149,0.07)}
+#neg-text{position:relative;font-family:"Montserrat","Inter","Helvetica Neue","Arial",sans-serif;font-size:150px;font-weight:900;color:#FFFFFF;line-height:1;white-space:nowrap;padding:30px 10px;text-shadow:0 0 90px #FF2D95,0 0 40px #FF2D95}
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+<div class="anchor"><div id="neg-plate"></div><div id="neg-text">GLOW</div></div>
+</div>
+<script src="assets/gsap.min.js"></script>
+<script>
+window.__timelines = window.__timelines || {};
+const tl = gsap.timeline({ paused: true });
+tl.fromTo('#neg-text', { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.4, ease: 'power4.out' }, 0.2);
+window.__timelines["main"] = tl;
+tl.seek(0);
+</script>
+</body>
+</html>
+`;
+}
+
+interface ComparisonEntry {
+  name: string;
+  /** Composition dir to render. */
+  dir: string;
+  mode: 'webm-native';
+  canvas: ManifestEntry['canvas'];
+  /** Fixture name whose MOV-derived WebM this native WebM is compared to. */
+  compareTo: string;
+}
+
 interface ManifestEntry {
   name: string;
   component: string;
@@ -245,6 +292,36 @@ function main(): void {
 
   // --- negative controls (rendered by render-all, asserted-fail by verify) ---
   const negatives: NegativeEntry[] = [];
+  const comparisons: ComparisonEntry[] = [];
+
+  {
+    const canvas = canvasFor('landscape');
+    const name = 'negative-faint-box';
+    const dir = join(FIXTURES, name);
+    mkdirSync(join(dir, 'assets'), { recursive: true });
+    writeFileSync(join(dir, 'index.html'), negativeFaintBoxHtml(), 'utf8');
+    if (existsSync(GSAP)) copyFileSync(GSAP, join(dir, 'assets', 'gsap.min.js'));
+    negatives.push({
+      name,
+      mode: 'full',
+      canvas: { width: canvas.width, height: canvas.height, fps: canvas.fps, durationSec: canvas.durationSec, output: canvas.output },
+      expectFail: ['mov.glow-box', 'webm.glow-box'],
+    });
+    n++;
+  }
+
+  {
+    // Native-vs-derived WebM comparison on the toughest glow fixture.
+    // Information only — does not change the MOV->WebM pipeline.
+    const canvas = canvasFor('landscape');
+    comparisons.push({
+      name: 'compare-webm-glow-torture-landscape',
+      dir: 'fixtures/glow-torture-landscape',
+      mode: 'webm-native',
+      canvas: { width: canvas.width, height: canvas.height, fps: canvas.fps, durationSec: canvas.durationSec, output: canvas.output },
+      compareTo: 'glow-torture-landscape',
+    });
+  }
 
   {
     const canvas = canvasFor('landscape');
@@ -278,10 +355,10 @@ function main(): void {
 
   writeFileSync(
     join(FIXTURES, 'manifest.json'),
-    JSON.stringify({ fixtures: manifest, negatives }, null, 2),
+    JSON.stringify({ fixtures: manifest, negatives, comparisons }, null, 2),
     'utf8'
   );
-  console.log(`wrote ${n} fixtures + ${negatives.length} negative controls to ${FIXTURES}`);
+  console.log(`wrote ${n} fixtures + ${negatives.length} negative controls + ${comparisons.length} comparisons to ${FIXTURES}`);
 }
 
 main();

@@ -36,9 +36,18 @@ interface NegativeEntry {
   expectFail: string[];
 }
 
+interface ComparisonEntry {
+  name: string;
+  dir: string;
+  mode: 'webm-native';
+  canvas: ManifestEntry['canvas'];
+  compareTo: string;
+}
+
 interface Manifest {
   fixtures: ManifestEntry[];
   negatives?: NegativeEntry[];
+  comparisons?: ComparisonEntry[];
 }
 
 function which(bin: string): string {
@@ -238,7 +247,24 @@ function main(): void {
     rmSync(jobTmp, { recursive: true, force: true });
   }
 
-  writeFileSync(REPORT, JSON.stringify({ generatedAt: new Date().toISOString(), ffmpeg, results, negatives: negResults }, null, 2), 'utf8');
+  // --- informational comparisons: native hyperframes WebM vs MOV-derived ---
+  // Does NOT change the pipeline — extra output only, asserted nowhere.
+  const compResults: Array<{ name: string; compareTo: string; file: string; bytes: number; ms: number; ok: boolean; error?: string | undefined }> = [];
+  for (const c of manifest.comparisons ?? []) {
+    const compDir = join(FIXTURES, c.dir);
+    const jobTmp = join(OUT, '_tmp', c.name);
+    mkdirSync(jobTmp, { recursive: true });
+    const outFile = join(OUT, `${c.name}.webm`);
+    console.log(`\n=== COMPARE ${c.name} (native webm vs ${c.compareTo}.webm) ===`);
+    const r = run(hf.cmd, [...hf.prefix, 'render', compDir, '-o', outFile, '--format', 'webm', '--fps', String(c.canvas.fps)], compDir, jobTmp);
+    const ok = r.code === 0 && existsSync(outFile);
+    const bytes = ok ? stat(outFile) : 0;
+    compResults.push({ name: c.name, compareTo: c.compareTo, file: outFile, bytes, ms: r.ms, ok, error: ok ? undefined : r.tail.slice(-400) });
+    console.log(`  webm-native ${ok ? 'ok' : 'FAILED'} (${(bytes / 1048576).toFixed(1)} MB, ${(r.ms / 1000).toFixed(1)}s)`);
+    rmSync(jobTmp, { recursive: true, force: true });
+  }
+
+  writeFileSync(REPORT, JSON.stringify({ generatedAt: new Date().toISOString(), ffmpeg, results, negatives: negResults, comparisons: compResults }, null, 2), 'utf8');
   console.log(`\nreport: ${REPORT}`);
 }
 

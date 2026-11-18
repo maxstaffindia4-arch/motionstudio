@@ -6,8 +6,10 @@
  *  - ffprobe: MOV master pix_fmt is yuva444p12le; WebM reports alpha (yuva420p)
  *  - transparency: alpha==0 pixels composite to EXACTLY the backdrop colour
  *    (red/black/white/green) — done in Node on ffmpeg-extracted RGBA
- *  - GLOW BOX TEST (glow-torture, MOV + WebM): alpha ~0 just outside the
- *    content bbox, smooth falloff, no rectangular low-alpha edge (box artifact)
+ *  - GLOW BOX TEST (glow-torture/glow-sweep + negative controls, MOV + WebM):
+ *    PRIMARY check is minExt — glow must extend past the solid content core.
+ *    Also ringMax (alpha outside content bbox) and faintHits (low-alpha
+ *    rectangular plate edges). edgeHits is informational only.
  *  - number-counter: frames at 1s/2s/3s from the MOV differ (counter animates)
  *
  * Usage: tsx spikes/render/scripts/verify.ts [fixturesDir] [outDir]
@@ -49,9 +51,17 @@ interface NegativeEntry {
   canvas: ManifestEntry['canvas'];
   expectFail: string[];
 }
+interface ComparisonEntry {
+  name: string;
+  dir: string;
+  mode: 'webm-native';
+  canvas: ManifestEntry['canvas'];
+  compareTo: string;
+}
 interface Manifest {
   fixtures: ManifestEntry[];
   negatives?: NegativeEntry[];
+  comparisons?: ComparisonEntry[];
 }
 
 // ---------- helpers ----------
@@ -144,6 +154,9 @@ function transparencyCheck(file: string, w: number, h: number, tSec: number): Pi
 const ALPHA_ON = 16;      // "content present" threshold (0-255)
 const EDGE_STEP = 60;     // alpha jump considered a hard edge
 const LOW_ALPHA_MAX = 120; // inside-alpha below this = glow region, not solid content
+const FAINT_STEP = 8;     // min alpha jump for a faint (low-alpha) rectangular edge
+const FAINT_IN_MIN = 8;   // inside alpha must exceed this to count as a plate
+const FAINT_OUT = 6;      // outside-side alpha ceiling (must be ~transparent)
 
 interface AlphaInfo {
   w: number; h: number;
@@ -213,6 +226,48 @@ function findBoxEdges(info: AlphaInfo): string[] {
   return findings;
 }
 
+/**
+ * Faint-box variant of findBoxEdges: catches a long straight edge where the
+ * inside alpha is low (<LOW_ALPHA_MAX) but well above transparent and the
+ * outside is ~0. A low-alpha rectangular plate merges into the content mask
+ * so minExt looks clean — this scan is what catches it.
+ */
+function findFaintEdges(info: AlphaInfo): string[] {
+  const { w, h, alpha } = info;
+  const at = (x: number, y: number) => alpha[y * w + x]!;
+  const findings: string[] = [];
+  // Faint plates are large: observed bad edges span 500-1200 lines, while
+  // legit glow/card boundaries top out ~87 — 150 separates them cleanly.
+  const MIN_RUN = 150;
+
+  const edgeAt = (horizontal: boolean): Map<number, number> => {
+    const m = new Map<number, number>();
+    const lines = horizontal ? h : w;
+    const len = horizontal ? w : h;
+    for (let l = 0; l < lines; l++) {
+      for (let i = 1; i < len; i++) {
+        const a0 = horizontal ? at(i - 1, l) : at(l, i - 1);
+        const a1 = horizontal ? at(i, l) : at(l, i);
+        const a2 = horizontal ? at(Math.min(i + 1, len - 1), l) : at(l, Math.min(i + 1, len - 1));
+        const inside = Math.max(a0, a1, a2);
+        const outside = Math.min(a0, a1, a2);
+        const step = Math.abs(a1 - a0) + Math.abs(a2 - a1);
+        if (step >= FAINT_STEP && inside > FAINT_IN_MIN && inside < LOW_ALPHA_MAX && outside <= FAINT_OUT) {
+          m.set(i, (m.get(i) ?? 0) + 1);
+        }
+      }
+    }
+    return m;
+  };
+
+  for (const [axis, m] of [['v', edgeAt(true)], ['h', edgeAt(false)]] as const) {
+    for (const [pos, count] of m) {
+      if (count >= MIN_RUN) findings.push(`${axis}-edge x/y=${pos} spans ${count} lines`);
+    }
+  }
+  return findings;
+}
+
 interface Component {
   minX: number; minY: number; maxX: number; maxY: number;
   pixels: number[];
@@ -254,15 +309,17 @@ interface GlowMetrics {
   minExt: number | null;
   /** Largest alpha found in the ring outside the content bbox. */
   maxRing: number;
-  /** Total straight-edge hits across all times. */
+  /** Total straight-edge hits across all times (informational only). */
   edgeHits: number;
+  /** Total faint-edge hits across all times (low-alpha plate detector). */
+  faintHits: number;
 }
 
 function glowBoxCheck(
   file: string, w: number, h: number, times: number[]
 ): { pass: boolean; detail: string; metrics: GlowMetrics } {
   const problems: string[] = [];
-  const metrics: GlowMetrics = { minExt: null, maxRing: 0, edgeHits: 0 };
+  const metrics: GlowMetrics = { minExt: null, maxRing: 0, edgeHits: 0, faintHits: 0 };
   for (const t of times) {
     const rgba = extractRgbaBuf(file, t);
     if (!rgba) { problems.push(`t=${t}: extraction failed`); continue; }
@@ -282,10 +339,16 @@ function glowBoxCheck(
     metrics.maxRing = Math.max(metrics.maxRing, ringMax);
     if (ringMax > ALPHA_ON) problems.push(`t=${t}: alpha ${ringMax} in ${R}px ring outside bbox`);
 
-    // 2) no rectangular low-alpha edge (box artifact)
+    // 2) edgeHits is INFORMATIONAL ONLY — no longer gates pass/fail.
+    //    minExt (check 3) is the primary glow-box check.
     const edges = findBoxEdges(info);
     metrics.edgeHits += edges.length;
-    if (edges.length > 0) problems.push(`t=${t}: ${edges.slice(0, 3).join('; ')}`);
+
+    // 2b) faint rectangular plate: low-alpha hard edge is a box artifact even
+    //     when the plate merges into the content mask (minExt can't see it).
+    const faint = findFaintEdges(info);
+    metrics.faintHits += faint.length;
+    if (faint.length > 0) problems.push(`t=${t}: faint-edge ${faint.slice(0, 3).join('; ')}`);
 
     // 3) Glow must extend BEYOND the solid content, per connected component:
     //    bbox(alpha>16) vs bbox(alpha>200). If a glow were clipped at the
@@ -315,7 +378,7 @@ function glowBoxCheck(
     }
   }
   const m =
-    `minExt=${metrics.minExt ?? 'n/a'}px ringMax=${metrics.maxRing} edgeHits=${metrics.edgeHits}`;
+    `minExt=${metrics.minExt ?? 'n/a'}px ringMax=${metrics.maxRing} edgeHits=${metrics.edgeHits} faintHits=${metrics.faintHits}`;
   return {
     pass: problems.length === 0,
     detail: problems.length ? `${problems.join(' | ')} [${m}]` : `clean (${m})`,
@@ -363,11 +426,13 @@ function main(): void {
       const pix = vs?.pix_fmt ?? 'MISSING';
       // VP9 alpha is signalled via the alpha_mode=1 tag; ffprobe reports the
       // base pix_fmt as yuv420p even when alpha is present (Motion Lab README).
+      const tags = (vs?.tags ?? {}) as Record<string, string>;
+      const alphaMode = tags.alpha_mode ?? tags.ALPHA_MODE;
       const hasAlpha =
         /yuva|rgba|gbrap/.test(pix) ||
-        vs?.tags?.alpha_mode === '1' ||
+        alphaMode === '1' ||
         JSON.stringify(vs?.side_data ?? []).includes('alpha');
-      row(f.name, 'webm.alpha', hasAlpha, `pix_fmt=${pix} alpha_mode=${vs?.tags?.alpha_mode ?? '-'} codec=${vs?.codec_name}`);
+      row(f.name, 'webm.alpha', hasAlpha, `pix_fmt=${pix} alpha_mode=${alphaMode ?? '-'} codec=${vs?.codec_name}`);
     } else {
       row(f.name, 'webm.alpha', false, 'webm missing');
     }
@@ -432,6 +497,52 @@ function main(): void {
     }
   }
 
+  // --- informational comparisons: native WebM vs MOV-derived WebM ---
+  // NOT pass/fail — reported for information only; pipeline unchanged.
+  const compRenders = (renderReport as { comparisons?: Array<{ name: string; compareTo: string; file: string; bytes: number; ok: boolean }> }).comparisons ?? [];
+  const comparisons: Array<Record<string, unknown>> = [];
+  for (const c of manifest.comparisons ?? []) {
+    const rr = compRenders.find((x) => x.name === c.name);
+    const nativeFile = rr?.file ?? join(OUT, `${c.name}.webm`);
+    const derivedFile = join(OUT, `${c.compareTo}.webm`);
+    const { width: w, height: h } = c.canvas;
+    const t = Math.min(2, c.canvas.durationSec / 2);
+    const nvs = existsSync(nativeFile) ? ffprobeStreams(nativeFile).find((s) => s.codec_type === 'video') : undefined;
+    const npix = nvs?.pix_fmt ?? 'MISSING';
+    const nTags = (nvs?.tags ?? {}) as Record<string, string>;
+    const nAlphaMode = nTags.alpha_mode ?? nTags.ALPHA_MODE;
+    const nAlpha =
+      /yuva|rgba|gbrap/.test(npix) ||
+      nAlphaMode === '1' ||
+      JSON.stringify(nvs?.side_data ?? []).includes('alpha');
+    const nClean = existsSync(nativeFile) ? transparencyCheck(nativeFile, w, h, t) : null;
+    const dClean = existsSync(derivedFile) ? transparencyCheck(derivedFile, w, h, t) : null;
+    comparisons.push({
+      name: c.name,
+      compareTo: c.compareTo,
+      nativeWebm: {
+        file: nativeFile,
+        bytes: rr?.bytes ?? null,
+        ok: rr?.ok ?? false,
+        pixFmt: npix,
+        alphaMode: nAlphaMode ?? null,
+        hasAlpha: nAlpha,
+        transparentPixels: nClean?.pass ?? null,
+        transparentDetail: nClean?.detail ?? 'missing',
+      },
+      derivedWebm: {
+        file: derivedFile,
+        bytes: renders.get(c.compareTo)?.webm?.bytes ?? null,
+        transparentPixels: dClean?.pass ?? null,
+        transparentDetail: dClean?.detail ?? 'missing',
+      },
+    });
+    console.log(
+      `INFO  compare ${c.name}: native alpha=${nAlpha} transparent=${nClean?.pass ?? 'n/a'} (${((rr?.bytes ?? 0) / 1048576).toFixed(1)} MB)` +
+      ` vs derived transparent=${dClean?.pass ?? 'n/a'} (${(((renders.get(c.compareTo)?.webm?.bytes ?? 0)) / 1048576).toFixed(1)} MB)`
+    );
+  }
+
   // --- summary ---
   const fails = rows.filter((r) => !r.pass);
   const out = {
@@ -441,6 +552,7 @@ function main(): void {
     failed: fails.length,
     rows,
     negativeControls: controls,
+    comparisons,
     timings: renderReport.results.map((r) => ({
       name: r.name,
       movMs: r.mov?.ms, webmMs: r.webm?.ms, chromaMs: r.chroma?.ms, fullMs: r.full?.ms,

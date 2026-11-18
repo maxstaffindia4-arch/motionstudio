@@ -195,6 +195,21 @@
   ],
   "negatives": [
     {
+      "name": "negative-faint-box",
+      "mode": "full",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      },
+      "expectFail": [
+        "mov.glow-box",
+        "webm.glow-box"
+      ]
+    },
+    {
       "name": "negative-glow-box",
       "mode": "full",
       "canvas": {
@@ -224,6 +239,21 @@
         "mp4.glow-box",
         "mp4.transparent-pixels"
       ]
+    }
+  ],
+  "comparisons": [
+    {
+      "name": "compare-webm-glow-torture-landscape",
+      "dir": "fixtures/glow-torture-landscape",
+      "mode": "webm-native",
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationSec": 5,
+        "output": "transparent"
+      },
+      "compareTo": "glow-torture-landscape"
     }
   ]
 }

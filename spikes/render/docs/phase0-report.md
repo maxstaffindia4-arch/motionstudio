@@ -1,6 +1,6 @@
 # Phase 0 Spike Report — Transparent Export on Linux/Docker
 
-**Date:** 2026-11-17 · **Scope:** prove the Motion Lab transparent-export method
+**Date:** 2026-11-17 (follow-ups 2026-11-18) · **Scope:** prove the Motion Lab transparent-export method
 works end-to-end on compositions produced by `@motion-studio/engine`, inside a
 Linux/Docker render pipeline.
 
@@ -9,7 +9,7 @@ Linux/Docker render pipeline.
 The **method is verified**: native `hyperframes render --format mov`
 (ProRes 4444 / `yuva444p12le`) + ffmpeg-derived VP9-alpha WebM and
 composited MP4s produces correct transparent output from engine scenes —
-**84/84 automated checks pass**, including the glow-box regression test on
+**90/90 automated checks pass**, including the glow-box regression test on
 both the MOV master and the derived WebM.
 
 The **Docker image itself is untested**: no Docker daemon exists on the
@@ -32,8 +32,10 @@ in the lavfi colour source. The spike parameterizes it per fixture canvas
 (required for vertical/square/custom); the filter graph and codec args are
 identical.
 
-Native `--format webm` was **not** used (Motion Lab verified it emits
-`yuv420p` with no alpha).
+Native `--format webm` is **not** part of the pipeline (the MOV-master →
+ffmpeg-derive method is the specified path). A native-WebM render of
+glow-torture-landscape was produced once as an informational comparison —
+see "Native vs derived WebM" below.
 
 ## Fixtures
 
@@ -47,13 +49,32 @@ Native `--format webm` was **not** used (Motion Lab verified it emits
   "box artifact" regression fixture. Required a small engine addition:
   `StackStyle.glow` → `box-shadow` (committed separately, `05433f7`).
 
-## Results — `scripts/verify.ts` (84/84 PASS)
+Negative controls (`manifest.json → negatives[]`): `negative-glow-box`
+(opaque clip plate), `negative-faint-box` (7%-alpha plate behind the
+glow), `negative-native-mp4` (opaque h264, no alpha). Informational
+comparison (`manifest.json → comparisons[]`):
+`compare-webm-glow-torture-landscape` renders glow-torture-landscape to
+native `--format webm` for the native-vs-derived comparison above.
+
+## Results — `scripts/verify.ts` (90/90 PASS)
 
 Checks per fixture: ffprobe pixel format, alpha==0 pixels composite to
-exactly red/black/white/green backdrops, glow-box analysis (alpha≈0 in the
-ring outside content, no straight low-alpha edges ≥30 px, glow skirt
-extends ≥6 px past the solid core per connected component), counter
+exactly red/black/white/green backdrops, glow-box analysis, counter
 frames at 1 s/2 s/3 s.
+
+**Glow-box detector semantics (updated 2026-11-18):**
+
+- **PRIMARY: `minExt`** — the glow skirt must extend ≥6 px past the solid
+  content core (alpha>200) within each connected component. A clipped or
+  absent glow collapses the two bounding boxes together (`ext→0`).
+- **`ringMax`** — max alpha in the 3 px ring outside the content bbox;
+  must stay ≤ ALPHA_ON (16).
+- **`faintHits`** — count of long straight edges (≥150 lines) where the
+  inside alpha is low (<120) but well above transparent and the outside
+  is ~0. Catches low-alpha rectangular plates that merge into the
+  content mask and are invisible to `minExt`/`ringMax`.
+- **`edgeHits` — INFORMATIONAL ONLY.** The original ≥60-step edge scan is
+  still computed and reported but no longer gates pass/fail.
 
 | Check | MOV master | Derived WebM |
 |---|---|---|
@@ -65,16 +86,49 @@ frames at 1 s/2 s/3 s.
 **No stage introduced a glow box.** The derived WebM's alpha matches the
 MOV master's behaviour on every glow fixture.
 
-Measured detector values (good fixtures): `minExt=7–15px` glow skirt,
-`ringMax=16` (== ALPHA_ON threshold, i.e. no alpha outside content),
-`edgeHits=0` straight-edge detections — identical on MOV and WebM.
+Measured detector values (good fixtures): `minExt=7–31px` glow skirt,
+`ringMax≤16` (== ALPHA_ON threshold, i.e. no alpha outside content),
+`faintHits=0`, `edgeHits=0` — identical on MOV and WebM.
 
-### Negative controls (detector must FAIL — 4/4 expected-fail rows PASS)
+### Negative controls (detector must FAIL — 6/6 expected-fail rows PASS)
 
 | Control | What it is | Result |
 |---|---|---|
 | `negative-glow-box` (MOV + derived WebM) | Hand-authored comp reproducing the Motion Lab box artifact: opaque plate inside `overflow:hidden` clip that cuts the glow at a straight edge | glow-box check **FAILS as required**: `minExt=0px` (glow bbox == solid bbox, skirt clipped) at all 5 sample times, both stages |
+| `negative-faint-box` (MOV + derived WebM) | Same glow scene but with a **7%-alpha (≈18/255) rectangular plate** (1200×500) behind the glow — below the solid-content threshold, right at ALPHA_ON | glow-box check **FAILS as required via `faintHits=40`**: the plate merges into the content mask so `minExt=194px` and `ringMax=0` look perfectly clean — only the faint-edge scan sees the 500-line straight edges at x≈359/360/1559. This is exactly the evasion `minExt` alone cannot catch. |
 | `negative-native-mp4` | `hyperframes render --format mp4` of glow-sweep-landscape (opaque h264, no alpha) | glow-box and transparent-pixels **FAIL as required** (alpha=255 everywhere → `ext=0`, no transparent pixels) |
+
+**Good-vs-bad separation after threshold tuning.** The first faint-edge
+scan (MIN_RUN=30, step≥8) flagged `glow-torture-custom` — legit card/glow
+boundaries produced 39-line (MOV) and 86–87-line (WebM) runs. Raising
+`MIN_RUN` to **150** cleared all 16 good fixtures (`faintHits=0`
+everywhere) while the faint-box plate still hits 500-line edges
+(`faintHits=40` across 5 sample times × 2 stages). Separation:
+
+| | minExt | ringMax | faintHits | edgeHits |
+|---|---|---|---|---|
+| Good fixtures (n=16, MOV+WebM) | 7–31 px | ≤16 | 0 | 0 |
+| negative-glow-box | **0 px** | 0–2 | 0 | 0 |
+| negative-faint-box | 194 px (clean) | 0 (clean) | **40** | 0 |
+| negative-native-mp4 | 0 px | 0 | 0 | 0 |
+
+### Native vs derived WebM — informational comparison
+
+`compare-webm-glow-torture-landscape`: a native
+`hyperframes render --format webm` of glow-torture-landscape compared
+against the MOV-derived WebM of the same fixture. **Pipeline unchanged —
+information only.**
+
+| | Native `--format webm` | MOV → ffmpeg-derived WebM |
+|---|---|---|
+| Size | 857,116 B (~0.82 MiB) | 589,318 B (~0.56 MiB) |
+| Alpha signal | `vp9/yuv420p` + `ALPHA_MODE=1` tag | `vp9/yuv420p` + `alpha_mode=1` tag |
+| Alpha cleanliness | transparent-pixels check PASS (alpha==0 composites exactly to all 4 backdrops) | PASS, identical check |
+| Notes | hyperframes defaults to CRF 16 ("looks"); derived uses CRF 24 — size gap is mostly quality setting, not container overhead | Motion Lab method, pinned args |
+
+Both preserve alpha on 0.9.59. The native path is ~45% larger at default
+quality but skips the MOV master entirely; the derived path remains the
+specified method (deterministic CRF, proven decode path).
 
 **Finding — native WebM alpha works in hyperframes 0.9.59.** A native
 `--format webm` render of glow-sweep-landscape probes as
@@ -121,15 +175,25 @@ because scenes are mostly transparent; MP4s 0.05–0.2 MB.
 6. **Negative controls** live in `manifest.json → negatives[]`;
    `verify.ts` asserts each expected-fail check actually fails and
    includes the detector's measured values (`minExt`, `ringMax`,
-   `edgeHits`) in `verify-report.json → negativeControls`.
+   `edgeHits`, `faintHits`) in `verify-report.json → negativeControls`.
+7. **Alpha-mode tag casing differs by muxer.** ffmpeg-derived WebMs tag
+   `alpha_mode=1`; hyperframes-native WebMs tag `ALPHA_MODE=1`. The
+   verify check is now case-insensitive.
+8. **Faint-edge `MIN_RUN` tuned 30 → 150.** At 30 the scan false-positived
+   on legit card/glow boundaries in `glow-torture-custom` (39–87-line
+   runs); the faint-box plate's edges span 500+ lines, so 150 separates
+   bad from good with ~2× margin on both sides.
 
 ## Docker smoke run
 
-`pnpm smoke:docker` (spike package) builds the image and runs
+`pnpm smoke:docker` (now a **root** script delegating to
+`spikes/render/scripts/smoke-docker.mjs`) builds the image and runs
 render-all + verify inside the container, then prints the verify summary.
-**Status: NOT YET RUN — no Docker daemon on the spike host.** The script
-exits 2 with a clear message when docker is unavailable. Verdict remains
-CONDITIONAL GO until this passes.
+**Status: NOT YET RUN locally — no Docker daemon on the spike host.**
+It now runs in CI: `.github/workflows/render-smoke.yml` executes
+`pnpm smoke:docker` on `ubuntu-latest` on every push and uploads
+`docs/phase0-report.md` as an artifact. Verdict remains CONDITIONAL GO
+until the first CI run passes.
 
 ## Dockerfile
 
