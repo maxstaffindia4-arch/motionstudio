@@ -29,32 +29,37 @@ packages/ai/
     providers/
       errors.ts                 AiError + ProviderErrorKind taxonomy
       redact.ts                 key-redaction helpers (shared)
-      registry.ts               provider factory: google | anthropic |
-                               openai | openai-compatible (baseURL)
-      index.ts                  generateStructured(), testConnection()
+      index.ts                  provider factories + generateStructured(),
+                               testConnection(), toAiError()
       fake.ts                   FakeProvider (scripted, deterministic)
-    intent.ts                   routeIntent() + detectThemeHint()
-                                (ports of routeArchetype / theme-colors)
+    intent.ts                   routeIntent() + detectThemeHint() +
+                               detectAnchorHint() + extractTextItems() +
+                               extractNumber() (ports of routeArchetype /
+                               theme-colors / text-item parsing)
     memory.ts                   projectMemory injection + token estimate
     verbatim.ts                 quoted-text + lockedText extraction/check
+    scene-out.ts                ModelOutputSchema, model output → SceneSpec
+                               (both shapes), settings enforcement,
+                               buildTemplatePlan(), applyManualGuard()
+    stage.ts                    compileScene → temp composition dir
+                               (index.html + assets/), engine-assets and
+                               hyperframes-bin resolution
     prompt/
       spec-docs.ts              zod → compact grammar doc for Scene/Element/
                                Background/Animation/Placement/Style
       catalog.ts                component catalog from engine COMPONENTS
                                (id, description, example, paramFields,
                                params JSON-schema via zod-to-json-schema)
-      builder.ts                buildSystemPrompt / buildUserPrompt,
+      builder.ts                buildPrompts() (system+user),
                                PROMPT_VERSION, snapshot-friendly pure fns
-    scene-out.ts                model output → SceneSpec (both shapes),
-                               settings enforcement
     lint.ts                     `hyperframes lint <dir> --json` wrapper
-    layout-qa.ts                Playwright DOM measurement (canvas-agnostic)
+    layout-qa.ts                Playwright DOM measurement (canvas-agnostic,
+                               pooled browser)
     loop.ts                     generateAnimation() quality loop
-    evals.ts                    eval runner helpers (used by evals/run.ts)
   evals/
     golden.json                 20 prompts + machine-checkable expectations
-    run.ts                      CLI: --provider --model --key-env
-    report-<date>.md            generated
+    run.ts                      CLI: --provider --model --key-env --runs N
+    report-<date>.md            generated (gitignored)
   tests/                        vitest (unit + loop + layout-qa fixtures)
 ```
 
@@ -116,14 +121,20 @@ interface GenerationInput {
 }
 
 interface StageMetrics {        // per-stage token/latency accounting
-  stage: 'generate' | 'repair' | 'lint' | 'layout-qa' | 'compile';
+  stage: StageName;             // route|generate|validate|compile|lint|
+                                // layout-qa|verbatim|repair|template
   latencyMs: number;
+  attempt?: number;
   inputTokens?: number;
   outputTokens?: number;
+  detail?: string;
 }
+type OnStage = (stage: StageName, info: StageInfo) => void;
+type GenerationStrategy = 'auto' | 'llm' | 'template';   // 'auto' aliases 'llm' for now
+
 interface GenerationIssue {
   severity: 'error' | 'warning';
-  stage: 'schema' | 'scene' | 'compile' | 'lint' | 'layout-qa' | 'verbatim';
+  stage: 'schema' | 'scene' | 'compile' | 'lint' | 'layout-qa' | 'verbatim' | 'manual-guard';
   message: string;
   elementId?: string;
 }
@@ -135,12 +146,27 @@ interface GenerationResult {
   repairAttempts: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   stages: StageMetrics[];
+  strategy: 'llm' | 'template';
+  component?: string;           // shape-A component id or template plan id
+  fellBackToTemplate?: boolean;
   route: { component?: string; confidence: number; reason: string };
+}
+
+interface GenerateAnimationOptions {
+  provider: ProviderRef;        // ProviderKind string OR FakeProvider instance
+  model: string;
+  apiKey?: string;
+  baseURL?: string;
+  strategy?: GenerationStrategy;    // default 'llm'
+  qa?: boolean;                     // layout QA on/off, default true
+  maxRepairs?: number;              // default 2
+  timeouts?: { generate?: number; lint?: number; 'layout-qa'?: number }; // ms
+  onStage?: OnStage;
+  signal?: AbortSignal;
 }
 ```
 
-`generateAnimation(input, { provider, model, apiKey, baseURL? , qa?: boolean })`
-is the single entry point.
+`generateAnimation(input, opts)` is the single entry point.
 
 ## 3. Provider layer
 
@@ -157,10 +183,19 @@ so the key exists only on the stack frame. `redact.ts` exports
 `redactSecrets(text, secrets[])` used by error mapping and tests; a unit
 test asserts a thrown error's `.message`/`.stack` never contains the key.
 
-`generateStructured` returns `{ object, usage, latencyMs }` where `object`
-is already parsed+validated against the caller's zod `schema`
+`generateStructured` returns `{ object, usage, latencyMs, mode }` where
+`object` is already parsed+validated against the caller's zod `schema`
 (`generateObject` does schema validation; a second `schema.parse` guards
-provider quirks).
+provider quirks). `mode` is `'object'` (structured-output path) or
+`'json'` (plain-text + JSON extraction + own zod validation).
+
+`structuredMode: 'auto' | 'object' | 'json'` (default `'auto'`):
+- `'object'` → `generateObject` only; failure throws.
+- `'json'` → `generateText` + JSON extraction + `schema.parse`.
+- `'auto'` → tries `generateObject`; on `bad_output` ONLY (never on
+  auth/quota/timeout) falls back to the json path. Used when a provider
+  rejects union/complex schemas — evals record which `mode` succeeded
+  per provider (§12 note).
 
 `testConnection(provider, apiKey, baseURL?)` → `{ ok, models? }`:
 - Sends a trivial `generateObject` (schema `{ ok: z.literal(true) }`,
@@ -188,9 +223,13 @@ class AiError extends Error {
 
 Mapping inspects AI SDK `APICallError` (`statusCode`, `responseBody`)
 plus message regexes; retryAfter parsed from `Retry-After` header /
-`retry-after-ms` body field. Rate-limit/quota/timeout are **not**
-repairable by the loop — they abort `generateAnimation` with the typed
-error instead of burning repair attempts (Motion Lab rule kept).
+`retry-after-ms` body field. All error messages pass through
+`redactSecrets` with the call's apiKey/baseURL.
+
+In the quality loop, non-repairable kinds (`invalid_key`,
+`rate_limited`, `quota_exceeded`, `model_not_found`, `timeout`) do NOT
+burn repair attempts — the loop immediately falls back to the template
+strategy (§8); if the template also fails, the typed `AiError` is thrown.
 
 ### FakeProvider
 
@@ -205,13 +244,17 @@ CI eval runs entirely on it.
 Ported from Motion Lab `archetypes.ts` / `theme-colors.ts`, **demoted to
 hints**:
 
-- `routeIntent(prompt)` runs the same regex RULES over the 11 component
-  ids → `{ component?, confidence, reason }`. Injected into the user
-  prompt as "suggested component (hint, not a constraint)".
-- `detectThemeHint(prompt)` maps celebration/birthday/urgency/success/
-  tech/luxury keywords → `THEMES` key from engine tokens → hint only.
-- `extractVerbatimText(prompt)` pulls `"…"`/`“…”` quoted spans —
-  verbatim-lock candidates (§7).
+- `routeIntent(prompt)` runs regex RULES over the 11 component ids →
+  `{ component?, confidence, reason }`. Injected into the user prompt as
+  "suggested component (hint, not a constraint)". Also feeds
+  `buildTemplatePlan` (template strategy).
+- `detectThemeHint(prompt)` maps birthday/celebration/urgency/success/
+  tech/luxury keywords → `THEMES` key → hint only.
+- `detectAnchorHint(prompt)` → engine `Anchor` hint.
+- `extractTextItems(prompt)` — `TEXT: a / b / c` sections, quoted spans,
+  capitalized phrases, `Label: A / B` fallbacks (template params + edit
+  responder).
+- `extractNumber(prompt)` — first bare number (number-counter target).
 
 ## 5. Project memory (`memory.ts`)
 
@@ -228,8 +271,8 @@ hints**:
 
 ## 6. Prompt builder (`prompt/`)
 
-`PROMPT_VERSION = 'p2-2026-11-18'` (bump on any prompt change; snapshot
-test pins the full system prompt).
+`PROMPT_VERSION = 'p2-2026-11-18b'` (bump on any prompt change; a test
+pins the sha256 of the system prompt).
 
 **System prompt sections (in order):**
 1. Role: senior motion engineer producing Motion Studio Scene JSON.
@@ -260,18 +303,35 @@ verbatim-locked strings → current prompt → (edit mode) previous Scene JSON
 
 ## 7. Model output → SceneSpec (`scene-out.ts`)
 
+`ModelOutputSchema = z.union([SceneSpecSchema, ComponentChoiceSchema])`
+is the schema handed to `generateStructured`.
+
 ```
-parseModelOutput(raw):
-  shape A {component, params}  → COMPONENTS[id] must exist;
-                               buildScene(id, params, enforcedCanvas, tokens?)
+parseModelOutput(raw, settings):
+  shape A {component, params, tokens?, theme?, background?}
+                               → COMPONENTS[id] must exist;
+                                 buildScene(id, params, enforcedCanvas, tokens?)
+                                 then theme/background overrides applied
   shape B full SceneSpec       → SceneSpecSchema.parse(raw)
-  else                         → bad_output AiError (repairable)
+  else                         → AiError 'bad_output' (repairable)
 
 enforceSettings(scene, settings):
-  scene.canvas = CanvasSpec from settings (preset or custom w/h,
-    fps, durationSec, output, safeMargins)   // ALWAYS overwritten
-  validateScene(scene) → errors are repair issues, warnings pass through
+  scene.canvas = settingsToCanvas(settings)   // ALWAYS overwritten —
+    preset or custom w/h, fps, durationSec clamped [1,30], output,
+    safeMargins
 ```
+
+`buildTemplatePlan(prompt, routeComponent?)` — deterministic params for
+the template strategy: `routeIntent` picks the component (default
+`text-slam`), `extractTextItems`/`extractNumber` fill params, schema
+defaults cover the rest. No LLM call.
+
+`applyManualGuard(next, prev, userText)` — elements flagged
+`manual: true` (engine schema addition) in the PREVIOUS scene are
+reverted to their previous state when the model changed/removed them,
+unless the user's prompt/instruction references the element (by id or
+text content). Reports reverted ids → `manual-guard` warning issue.
+(Stack-child restoration falls back to top level — documented stub.)
 
 Canvas limits enforced: durationSec clamped to `[1, 30]`, fps to int
 `[1,120]` (schema does the rest). `output:'transparent'` + non-`none`
@@ -282,32 +342,47 @@ loop treats it as review-worthy, not blocking.
 
 ```
 generateAnimation(input, opts):
-  1. routeIntent + detectThemeHint + extractVerbatimText  (free, local)
-  2. buildSystemPrompt + buildUserPrompt
-  3. write compiled-candidate dir? NO — first get scene:
-     generateStructured(...) → scene-out.parse+enforce → SceneSpec
-  4. compileScene(scene) → { html, warnings }   (throws → issue)
-  5. materialize comp dir (temp): index.html + assets/gsap.min.js
-  6. hyperframes lint --json            → findings → issues
-  7. layout QA (Playwright, see §9)      → findings → issues
-  8. verbatim check (§10)                → blocking issues
-  9. issues.severity==='error'? → repair (max 2):
-       rebuild user prompt with exact issues appended
-       ("FIX THESE ISSUES: …") + previous scene JSON
-       goto 3 — keep BEST attempt (fewest errors, then latest)
- 10. status = issues-free ? 'ok' : 'needs_review'
-     return best attempt — never discard work
+  strategy 'template' → runTemplate() only (below), no LLM
+  strategy 'llm' (default; 'auto' aliases 'llm' until evals justify):
+  1. routeIntent + detectThemeHint → hints (free, local)
+  2. buildPrompts(input, hints) → { system, messages }
+  3. per attempt (0..maxRepairs, default 2):
+     a. generateStructured(ModelOutputSchema, timeoutMs=120s default,
+        combined AbortSignal = caller signal + per-stage timeout)
+        → parseModelOutput → enforceSettings → SceneSpec
+        (AiError bad_output/timeout/provider_error → repair prompt;
+         non-repairable kinds → template fallback immediately)
+     b. evaluateScene(scene):
+        - applyManualGuard (edits only) → manual-guard warning
+        - validateScene → scene errors block compile
+        - compileScene → stageScene temp dir → html + warnings
+        - hyperframes lint --json (timeout 60s) → lint findings
+        - layoutQA (pooled Chromium, timeout 15s/op) → QA findings
+        - verbatim check on visibleText(html) → blocking on missing
+     c. blocking = count(severity 'error'); track BEST attempt
+        (fewest blocking) — never discard work
+     d. blocking === 0 → return 'ok'; else append REPAIR PASS n user
+        message with exact error issues (≤12) → next attempt
+  4. exhausted repairs → template fallback if its blocking ≤ best,
+     else best attempt as 'needs_review' (fellBackToTemplate flag when
+     the template produced the result)
 ```
 
-Stage metrics recorded per pass (generate/repair tokens+latency,
-lint/qa/compile latency). `issues` carry `stage` so repair prompts can be
-precise. Non-repairable AiError kinds (rate_limited, quota_exceeded,
-invalid_key, model_not_found, timeout) propagate immediately.
+Stage metrics recorded per pass via `onStage(stage, info)` +
+`result.stages` (attempt, latencyMs, tokens, detail). `opts.signal`
+is checked between stages and passed into `generateStructured`.
+
+**Template strategy** (`strategy:'template'` or fallback): deterministic
+`routeIntent → buildTemplatePlan → buildScene → evaluateScene`. Zero
+provider calls; still runs compile/lint/QA/verbatim so results are
+comparable. Used as fallback when the model fails — `fellBackToTemplate`
+marks it on the result.
 
 **Edits (`previous` given):** user prompt carries the previous SceneSpec
 JSON + instruction; system prompt adds "return the FULL updated scene;
-preserve element ids and all properties the instruction does not mention".
-Manual-edit survival is prompt-level best effort (documented limitation —
+preserve element ids and all properties the instruction does not
+mention". `applyManualGuard` (§7) hard-enforces `manual:true` elements;
+other preservation is prompt-level best effort (documented limitation —
 no diff/merge engine this phase).
 
 ## 9. Layout QA (`layout-qa.ts`) — canvas-agnostic port
@@ -315,33 +390,36 @@ no diff/merge engine this phase).
 Port of Motion Lab `layout-qa.ts` with **all 1920×1080 constants removed**:
 
 - Viewport = `canvas.width × canvas.height` (deviceScaleFactor 1).
-- Sample times: element `start+0.3` for each top-level element (from the
-  SceneSpec, not prompt parsing) + mid-hold between last start and
-  `durationSec`.
+- Sample times: 5 fixed fractions of `durationSec`
+  (0, 20%, 50%, 80%, end−0.05s, deduped).
 - Seek via `window.__timelines['main'].seek(t)` (engine emits this).
-- Measure `.clip` elements (engine emits `class="clip"` + `id`) — same
-  selector as Motion Lab. `getBoundingClientRect` + computed
-  `opacity`/`fontSize`.
-- Checks (all scaled by `unit = min(w,h)/1080`):
-  - **overlap**: pairwise intersection >10% of smaller box → error
-    (unchanged threshold).
-  - **safe area**: box must stay inside `safeArea(canvas)` (engine
-    geometry, respects `safeMargins` mode) → error. (Replaces
-    title-safe 80% — our safe area IS the contract.)
-  - **font size**: `fontSize < max(16, 40*unit)` px → error
-    (40px@1080p rule, unit-scaled; Motion Lab's flat 40px was 1080p-only).
-  - **empty frame**: a sample time with zero visible clips → warning.
-  - **page errors**: console/pageerror → error.
-- Text overflow/clipping: clip elements with `overflow:hidden` ancestors
-  — measured box vs scroll size where applicable; reported as warning
-  (hard to be precise across element types; overlap+safe-area are the
-  hard gates).
-- Expected-text presence at mid-hold is **not** duplicated here — the
-  verbatim check (§10) owns text presence.
+- Measure leaf `.clip` elements (no `.clip` descendants) —
+  `getBoundingClientRect` + computed `opacity`/`fontSize`/`display`.
+- One pooled `chromium.launch({headless:true})` browser is shared across
+  generations (`closeLayoutBrowser()` for teardown); each call gets a
+  fresh context+page, closed afterwards.
 
-Playwright (`playwright` pkg, chromium). Browser install is a dev/CI
-concern (`playwright install chromium`); engine's hyperframes Chrome is
-not reusable (different driver).
+Checks (severity in parens):
+- **text-overflow** (error): `scrollWidth > clientWidth+1`, OR
+  `scrollHeight > clientHeight + max(8px, 15%)` — the vertical tolerance
+  exists because tight `lineHeight` (e.g. `lineHeight:1` icon glyphs)
+  overflows by font metrics without visible clipping. Also flags text
+  extending beyond an `overflow:hidden|clip|scroll|auto` ancestor rect.
+- **outside-canvas** (error): leaf box exits the canvas bounds.
+- **outside-safe-area** (warning): box exits `safeArea(canvas)` —
+  engine geometry, respects `safeMargins`.
+- **text-overlap** (warning): two leaf text boxes intersect >10% of the
+  smaller area.
+- **font-too-small** (warning, non-blocking): computed `fontSize <
+  40px × unit(canvas)`; exempt when the element id's first `-` segment is
+  `caption`, `label`, or `footnote` (role convention — the engine schema
+  has no role field).
+- **empty-frame** (error only when ALL samples empty; warning when
+  >half): delayed entrances legitimately produce empty frames at t=0 —
+  the check aggregates across samples instead of flagging single ones.
+
+Issues dedupe by `code|elementId` keeping the first timestamp. Warnings
+never block; only `severity:'error'` issues trigger repair.
 
 ## 10. Verbatim lock (`verbatim.ts`)
 
@@ -355,35 +433,70 @@ not reusable (different driver).
 
 ## 11. Evals (`evals/`)
 
-`golden.json`: 20 entries `{ id, prompt, settings, expect: { component?|
-elementTypes?, containsText?, canvas:{w,h,output}, maxBlockingIssues:0 },
-fake? }`. Coverage: all 11 components, vertical+landscape,
-transparent+opaque, gradient background, verbatim case, edit-follow-up,
-2 vague prompts.
+`golden.json`: 20 entries `{ id, prompt, settings?, lockedText?,
+edit?: {basePrompt, instruction}, expect: { component?, containsText?,
+canvas?{w,h}, backgroundKind?, ok? } }`. Coverage: all 11 components,
+vertical+landscape+square, transparent+opaque, gradient background,
+verbatim-locked case, edit-follow-up (previous scene synthesized via
+the template strategy), 2 vague prompts.
 
-`evals/run.ts` CLI: `--provider <p> --model <m> [--key-env NAME]
-[--base-url URL] [--out report-x.md]`. Env-var keys only (e.g.
-`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`).
-`--provider fake` replays each entry's `fake` scene — **CI path, no
-network**. Report: pass rate, repair rate, tokens, est. cost (static
-$/M-token table per provider, clearly labeled estimate), p50 latency.
+`evals/run.ts` CLI: `pnpm eval --provider <p> --model <m>
+[--key-env NAME] [--runs N] [--no-qa] [--strategy llm|template]`.
+Env-var keys only (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or `--key-env`). N runs per prompt (default 3).
+
+`--provider fake` uses a `FakeProvider` whose responder derives scenes
+deterministically via `buildTemplatePlan`/`routeIntent` (edit mode
+rewrites the previous scene's first text element; gradient prompts get
+a gradient background) — **CI path, no network, no keys**.
+
+Report `evals/report-<date>.md` (gitignored): overall + per-prompt pass
+rate, repair rate, token totals, estimated cost (static $/M-token table,
+unknown models → n/a), total/avg latency. Exits 1 when pass rate < 80%.
+`.github/workflows/ai-eval.yml` runs typecheck + tests + fake eval on
+push and uploads the report as an artifact.
 
 ## 12. Error taxonomy summary
 
 | kind | repairable by loop? | surfaces as |
 |---|---|---|
-| bad_output / schema / scene / compile / lint / layout-qa / verbatim | yes (≤2) | GenerationIssue → repair prompt |
-| rate_limited, quota_exceeded, timeout | no | thrown AiError |
-| invalid_key, model_not_found | no | thrown AiError |
-| provider_error (5xx/network) | no (this phase) | thrown AiError |
+| bad_output / schema / scene / compile / lint / layout-qa / verbatim | yes (≤2 repairs) | GenerationIssue → repair prompt |
+| rate_limited, quota_exceeded, model_not_found, timeout, invalid_key | no | template fallback → AiError if fallback also fails |
+| provider_error (5xx/network) | yes (counts as a failed attempt) | repair prompt, then template fallback |
 
-## 13. Deviation notes vs Motion Lab
+Provider-mode note: `generateStructured` reports `mode: 'object' |
+'json'` per call; eval stage metrics carry it so provider schema
+support (union SceneSpec) can be compared across providers.
 
-- **No template-first path.** Motion Lab routed ~80%-confidence prompts
-  to deterministic templates with zero LLM calls. Phase 2 spec says the
-  model picks `{component, params}` — `buildScene` IS our deterministic
-  renderer, so archetype params still produce safe layouts; the LLM only
-  fills params. `routeIntent` is a hint, per spec.
+## 13. Deviation notes vs Motion Lab / spec amendments
+
+- **Template strategy added** (user amendment): `strategy:
+  'auto'|'llm'|'template'`; template = deterministic
+  `routeIntent → buildTemplatePlan → buildScene` with zero LLM calls,
+  used explicitly AND as fallback when the model fails. `'auto'`
+  currently aliases `'llm'` — not enabled until evals justify it.
+- **Manual-element guard** (user amendment): `manual?: boolean` added
+  to engine `TimingSchema`; `applyManualGuard` reverts unreferenced
+  manual-element changes post-generation.
+- **Structured-output fallback** (user amendment): providers that
+  reject the union schema fall back to plain JSON + own zod validation
+  (`structuredMode:'auto'`); `mode` is reported per call.
+- **Font floor is a warning** (user amendment), exempt for id-prefix
+  roles `caption`/`label`/`footnote`.
+- **`onStage` + `AbortSignal` + per-stage timeouts** (user amendment);
+  **pooled Playwright browser** shared across generations.
+- **Evals run N times** (user amendment, default 3) with per-prompt
+  pass/repair rates, tokens, cost, latency.
+- **Engine additions**: `manual` flag on elements; optional
+  `width`/`height` on stack style (makes `overflow:'hidden'` actually
+  constrain content — required by layout-QA clip detection).
+- **Empty-frame semantics changed during bring-up**: single empty
+  samples are normal during entrances; error only when ALL samples are
+  empty, warning when >half.
+- **No template-first path in 'llm' mode.** Motion Lab routed
+  ~80%-confidence prompts to deterministic templates with zero LLM
+  calls; here the model picks `{component, params}` (or full SceneSpec)
+  and `routeIntent` stays a hint.
 - **Scene JSON instead of HTML.** Custom path returns SceneSpec, not
   comp HTML — engine compiles it, so layout QA/lint always run on real
   engine output.
