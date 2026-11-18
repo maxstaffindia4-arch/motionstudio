@@ -135,7 +135,12 @@ const SAMPLE_FN = `(t, cfg) => {
       issues.push({ code: 'outside-safe-area', severity: 'warning',
         message: 'element extends outside the safe area', elementId: box.id, at: t });
     }
-    if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) {
+    // Horizontal overflow is strict; vertical gets tolerance — tight line-height
+    // (e.g. lineHeight:1 icon glyphs) makes scrollHeight exceed clientHeight by
+    // font metrics (~10%) without any visible clipping.
+    const hOver = el.scrollWidth > el.clientWidth + 1;
+    const vOver = el.scrollHeight > el.clientHeight + Math.max(8, el.clientHeight * 0.15);
+    if (hOver || vOver) {
       issues.push({ code: 'text-overflow', severity: 'error',
         message: 'text overflows its container (scroll > client size)', elementId: box.id, at: t });
     } else {
@@ -181,11 +186,7 @@ const SAMPLE_FN = `(t, cfg) => {
       }
     }
   }
-  if (boxes.length === 0) {
-    issues.push({ code: 'empty-frame', severity: 'error',
-      message: 'no visible elements at this timestamp', at: t });
-  }
-  return { issues, visibleCount: boxes.length };
+  return { issues, visibleCount: boxes.length, empty: boxes.length === 0 };
 }`;
 
 function sampleTimes(canvas: CanvasSpec): number[] {
@@ -243,16 +244,33 @@ export async function layoutQA(
     const times = sampleTimes(canvas);
     const issues: LayoutIssue[] = [];
     const seen = new Set<string>();
+    let emptySamples = 0;
     for (const t of times) {
       const sample = (await page.evaluate(
         `(${SAMPLE_FN})(${JSON.stringify(t)}, ${JSON.stringify(cfg)})`
-      )) as { issues: LayoutIssue[]; visibleCount: number };
+      )) as { issues: LayoutIssue[]; visibleCount: number; empty: boolean };
+      if (sample.empty) emptySamples++;
       for (const issue of sample.issues) {
         const key = `${issue.code}|${issue.elementId ?? ''}`;
         if (seen.has(key)) continue;
         seen.add(key);
         issues.push(issue);
       }
+    }
+    // Empty frames are normal during intro/outro — only fail when the scene
+    // is empty at (nearly) every sampled timestamp.
+    if (emptySamples === times.length) {
+      issues.push({
+        code: 'empty-frame',
+        severity: 'error',
+        message: `no visible elements at any of ${times.length} sampled timestamps`,
+      });
+    } else if (emptySamples > times.length / 2) {
+      issues.push({
+        code: 'empty-frame',
+        severity: 'warning',
+        message: `${emptySamples}/${times.length} sampled timestamps have no visible elements`,
+      });
     }
     return {
       ok: !issues.some((i) => i.severity === 'error'),

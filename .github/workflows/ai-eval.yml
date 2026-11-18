@@ -1,0 +1,36 @@
+name: ai-eval
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/ai/**'
+      - 'packages/engine/**'
+      - '.github/workflows/ai-eval.yml'
+  workflow_dispatch:
+
+jobs:
+  fake-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright chromium
+        run: pnpm --dir packages/ai exec playwright install --with-deps chromium
+      - name: Typecheck
+        run: pnpm -r typecheck
+      - name: Unit tests
+        run: pnpm -r test
+      - name: Golden eval (fake provider)
+        run: pnpm eval --provider fake --model fake-model --runs 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-eval-report
+          path: packages/ai/evals/report-*.md
+          if-no-files-found: ignore

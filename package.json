@@ -12,6 +12,7 @@
     "test": "pnpm -r test",
     "build:browser": "pnpm -r build:browser",
     "lint:hf": "pnpm --filter @motion-studio/engine lint:hf",
-    "smoke:docker": "node spikes/render/scripts/smoke-docker.mjs"
+    "smoke:docker": "node spikes/render/scripts/smoke-docker.mjs",
+    "eval": "pnpm --dir packages/ai eval"
   }
 }

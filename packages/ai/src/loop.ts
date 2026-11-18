@@ -44,6 +44,7 @@ interface Attempt {
   html: string;
   issues: GenerationIssue[];
   blocking: number;
+  component: string | undefined;
 }
 
 interface Ctx {
@@ -75,7 +76,7 @@ function blockingCount(issues: GenerationIssue[]): number {
 // per-attempt pipeline: guard → validate → compile → lint → QA → verbatim
 // ---------------------------------------------------------------------------
 
-async function evaluateScene(ctx: Ctx, input: SceneSpec): Promise<Attempt> {
+async function evaluateScene(ctx: Ctx, input: SceneSpec, component?: string): Promise<Attempt> {
   const issues: GenerationIssue[] = [];
   let scene = input;
 
@@ -105,7 +106,7 @@ async function evaluateScene(ctx: Ctx, input: SceneSpec): Promise<Attempt> {
     });
   }
   if (v.errors.length > 0) {
-    return { scene, html: '', issues, blocking: blockingCount(issues) };
+    return { scene, html: '', issues, blocking: blockingCount(issues), component };
   }
 
   // compile
@@ -127,7 +128,7 @@ async function evaluateScene(ctx: Ctx, input: SceneSpec): Promise<Attempt> {
       stage: 'compile',
       message: `compile failed: ${(e as Error).message.slice(0, 400)}`,
     });
-    return { scene, html: '', issues, blocking: blockingCount(issues) };
+    return { scene, html: '', issues, blocking: blockingCount(issues), component };
   }
   for (const w of compileWarnings) {
     issues.push({
@@ -208,7 +209,7 @@ async function evaluateScene(ctx: Ctx, input: SceneSpec): Promise<Attempt> {
     emit(ctx, 'verbatim', t0, { detail: `${reqs.length} locked, ${check.missing.length} missing` });
   }
 
-  return { scene, html, issues, blocking: blockingCount(issues) };
+  return { scene, html, issues, blocking: blockingCount(issues), component: component ?? undefined };
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +227,7 @@ async function runTemplate(ctx: Ctx, routeComponent?: string): Promise<Attempt |
       buildScene(plan.component, plan.params, canvas) as SceneSpec,
       ctx.input.settings
     );
-    return await evaluateScene(ctx, scene);
+    return await evaluateScene(ctx, scene, plan.component);
   } catch {
     return null;
   }
@@ -263,6 +264,7 @@ export async function generateAnimation(
     usage: ctx.usage,
     stages: ctx.stages,
     strategy: strat,
+    ...(a.component !== undefined ? { component: a.component } : {}),
     route: {
       ...(route.component !== undefined ? { component: route.component } : {}),
       confidence: route.confidence,
@@ -291,6 +293,7 @@ export async function generateAnimation(
     opts.signal?.throwIfAborted();
     const t0 = Date.now();
     let parsedScene: SceneSpec;
+    let parsedComponent: string | undefined;
     try {
       const structured = (await generateStructured({
         provider: opts.provider,
@@ -304,7 +307,9 @@ export async function generateAnimation(
         ...(opts.signal ? { signal: opts.signal } : {}),
       })) as StructuredResult<unknown>;
       ctx.usage = addUsage(ctx.usage, structured.usage);
-      parsedScene = parseModelOutput(structured.object, input.settings).scene;
+      const parsed = parseModelOutput(structured.object, input.settings);
+      parsedScene = parsed.scene;
+      parsedComponent = parsed.component;
       emit(ctx, 'generate', t0, {
         attempt,
         detail: `mode=${structured.mode}`,
@@ -335,7 +340,7 @@ export async function generateAnimation(
 
     // evaluate the candidate scene
     const tEval = Date.now();
-    const result = await evaluateScene(ctx, parsedScene);
+    const result = await evaluateScene(ctx, parsedScene, parsedComponent);
     emit(ctx, 'validate', tEval, { attempt, detail: `${result.blocking} blocking` });
 
     if (!best || result.blocking < best.blocking) best = result;

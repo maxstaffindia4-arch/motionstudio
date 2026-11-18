@@ -7,3 +7,5 @@ out/
 spikes/render/out/
 
 **/.hyperframes/
+
+packages/ai/evals/report-*.md

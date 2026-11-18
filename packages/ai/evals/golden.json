@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "defaults": {
+    "settings": { "canvas": { "preset": "landscape" }, "output": "opaque", "durationSec": 5 }
+  },
+  "prompts": [
+    {
+      "id": "slam-landscape-opaque",
+      "prompt": "Bold slam headline that says \"SHIP IT\"",
+      "expect": { "component": "text-slam", "containsText": ["SHIP IT"], "canvas": { "width": 1920, "height": 1080 } }
+    },
+    {
+      "id": "keyword-pop-vertical-transparent",
+      "prompt": "keyword pop with the word \"GROWTH\"",
+      "settings": { "canvas": { "preset": "vertical" }, "output": "transparent" },
+      "expect": { "component": "keyword-pop", "containsText": ["GROWTH"], "canvas": { "width": 1080, "height": 1920 } }
+    },
+    {
+      "id": "lower-third-landscape",
+      "prompt": "lower third: Jane Doe / Product Lead",
+      "expect": { "component": "lower-third", "containsText": ["Jane Doe"], "canvas": { "width": 1920, "height": 1080 } }
+    },
+    {
+      "id": "strike-checklist-square",
+      "prompt": "strike-through checklist with Fast, Cheap, Reliable",
+      "settings": { "canvas": { "preset": "square" } },
+      "expect": { "component": "strike-checklist", "containsText": ["Fast"] }
+    },
+    {
+      "id": "number-counter-vertical",
+      "prompt": "count up to 98% customer satisfaction",
+      "settings": { "canvas": { "preset": "vertical" }, "output": "transparent" },
+      "expect": { "component": "number-counter", "canvas": { "width": 1080, "height": 1920 } }
+    },
+    {
+      "id": "icon-cards-landscape",
+      "prompt": "icon cards for Speed, Security, Scale",
+      "expect": { "component": "icon-cards", "containsText": ["Speed"] }
+    },
+    {
+      "id": "step-card-vertical",
+      "prompt": "step card: STEP 01 / Install the app",
+      "settings": { "canvas": { "preset": "vertical" } },
+      "expect": { "component": "step-card", "containsText": ["Install"] }
+    },
+    {
+      "id": "end-card-transparent",
+      "prompt": "end card for brand Acme with CTA \"Subscribe Now\"",
+      "settings": { "output": "transparent" },
+      "expect": { "component": "end-card", "containsText": ["Subscribe Now"] }
+    },
+    {
+      "id": "caption-track-landscape",
+      "prompt": "caption track showing \"hello world\"",
+      "expect": { "component": "caption-track", "containsText": ["hello world"] }
+    },
+    {
+      "id": "whip-transition-square",
+      "prompt": "whip transition between scenes",
+      "settings": { "canvas": { "preset": "square" } },
+      "expect": { "component": "whip-transition" }
+    },
+    {
+      "id": "glow-sweep-vertical-transparent",
+      "prompt": "glow sweep headline \"SHINE\"",
+      "settings": { "canvas": { "preset": "vertical" }, "output": "transparent" },
+      "expect": { "component": "glow-sweep", "containsText": ["SHINE"], "canvas": { "width": 1080, "height": 1920 } }
+    },
+    {
+      "id": "gradient-background",
+      "prompt": "text slam \"GRADIENT\" on a purple gradient background",
+      "settings": { "background": "gradient" },
+      "expect": { "component": "text-slam", "containsText": ["GRADIENT"], "backgroundKind": "gradient" }
+    },
+    {
+      "id": "verbatim-locked",
+      "prompt": "headline that says \"VERBATIM LOCK\" exactly",
+      "lockedText": ["VERBATIM LOCK"],
+      "expect": { "containsText": ["VERBATIM LOCK"] }
+    },
+    {
+      "id": "edit-follow-up",
+      "edit": { "basePrompt": "text slam \"Old Headline\"", "instruction": "change the headline to \"New Headline\"" },
+      "prompt": "change the headline to \"New Headline\"",
+      "expect": { "containsText": ["New Headline"] }
+    },
+    {
+      "id": "vague-pop",
+      "prompt": "make it pop",
+      "expect": { "ok": true }
+    },
+    {
+      "id": "vague-cool",
+      "prompt": "something cool for my video",
+      "expect": { "ok": true }
+    },
+    {
+      "id": "counter-landscape-transparent",
+      "prompt": "animated counter to 500 users",
+      "settings": { "output": "transparent" },
+      "expect": { "component": "number-counter" }
+    },
+    {
+      "id": "end-card-vertical-opaque",
+      "prompt": "end card with brand \"Nimbus\"",
+      "settings": { "canvas": { "preset": "vertical" } },
+      "expect": { "component": "end-card", "containsText": ["Nimbus"], "canvas": { "width": 1080, "height": 1920 } }
+    },
+    {
+      "id": "glow-sweep-square-transparent",
+      "prompt": "glow sweep \"ELECTRIC\"",
+      "settings": { "canvas": { "preset": "square" }, "output": "transparent" },
+      "expect": { "component": "glow-sweep", "containsText": ["ELECTRIC"] }
+    },
+    {
+      "id": "lower-third-square-transparent",
+      "prompt": "lower third: Sam Ray / Host",
+      "settings": { "canvas": { "preset": "square" }, "output": "transparent" },
+      "expect": { "component": "lower-third", "containsText": ["Sam Ray"] }
+    }
+  ]
+}

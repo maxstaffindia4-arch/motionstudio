@@ -17,7 +17,7 @@ const RULES: Array<{ component: string; pattern: RegExp; reason: string }> = [
   { component: 'text-slam', pattern: /\bslam|\bsmash|\bimpact\b/i, reason: 'prompt mentions a slam/impact entrance' },
   { component: 'keyword-pop', pattern: /\bkeyword|\bpop\b/i, reason: 'prompt mentions keyword pops' },
   { component: 'lower-third', pattern: /lower[- ]third|\bname bar\b|\btitle bar\b/i, reason: 'prompt asks for a lower third' },
-  { component: 'icon-cards', pattern: /\bicon|\bcards?\b/i, reason: 'prompt asks for icon cards' },
+  { component: 'icon-cards', pattern: /\bicons?\b|\bcards\b/i, reason: 'prompt asks for icon cards' },
   { component: 'step-card', pattern: /\bstep\b|\bprocess\b|\bworkflow\b/i, reason: 'prompt describes steps' },
   { component: 'end-card', pattern: /\bend card\b|\bcta\b|\bsubscribe\b|\blogo outro\b/i, reason: 'prompt asks for an end card' },
   { component: 'caption-track', pattern: /\bcaption|\bsubtitle|\bsub-?title\b/i, reason: 'prompt asks for captions' },

@@ -100,6 +100,8 @@ export interface GenerationResult {
   stages: StageMetrics[];
   /** Which strategy produced the final scene. */
   strategy: 'llm' | 'template';
+  /** Component id when the output used shape A (or the template plan). */
+  component?: string;
   /** True when the template fallback produced the result after LLM failure. */
   fellBackToTemplate?: boolean;
   route: { component?: string; confidence: number; reason: string };
